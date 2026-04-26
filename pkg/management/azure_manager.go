@@ -68,7 +68,10 @@ func (m *azureManager) GetQueue(ctx context.Context, name string) (*QueueInfo, e
 	if err != nil {
 		return nil, err
 	}
-	rt, _ := m.client.GetQueueRuntimeProperties(ctx, name, nil)
+	rt, err := m.client.GetQueueRuntimeProperties(ctx, name, nil)
+	if err != nil {
+		return nil, err
+	}
 	var rp *admin.QueueRuntimeProperties
 	if rt != nil {
 		rp = &rt.QueueRuntimeProperties
@@ -161,7 +164,10 @@ func (m *azureManager) GetTopic(ctx context.Context, name string) (*TopicInfo, e
 	if err != nil {
 		return nil, err
 	}
-	rt, _ := m.client.GetTopicRuntimeProperties(ctx, name, nil)
+	rt, err := m.client.GetTopicRuntimeProperties(ctx, name, nil)
+	if err != nil {
+		return nil, err
+	}
 	var rp *admin.TopicRuntimeProperties
 	if rt != nil {
 		rp = &rt.TopicRuntimeProperties
@@ -238,6 +244,7 @@ func (m *azureManager) GetSubscription(ctx context.Context, topic, name string) 
 		ActiveMessages:     int64(rt.ActiveMessageCount),
 		DeadLetterMessages: int64(rt.DeadLetterMessageCount),
 		CreatedAt:          rt.CreatedAt,
+		UpdatedAt:          rt.UpdatedAt,
 		AccessedAt:         rt.AccessedAt,
 	}
 	return &info, nil
