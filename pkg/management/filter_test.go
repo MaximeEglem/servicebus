@@ -115,12 +115,34 @@ func TestApplyQueueFiltersNumeric(t *testing.T) {
 func TestApplyQueueFiltersDate(t *testing.T) {
 	now := time.Now()
 	queues := []management.QueueInfo{
-		{Name: "old", AccessedAt: now.AddDate(-2, 0, 0)},
-		{Name: "new", AccessedAt: now},
+		{Name: "recent", AccessedAt: now},
+		{Name: "old", AccessedAt: now.AddDate(-5, 0, 0)},
 	}
-	f, _ := management.ParseFilter("LastAccessDate:01/01/2020-01/01/2030")
+	// Filter to last 2 years: only "recent" should match
+	from := now.AddDate(-2, 0, 0)
+	to := now.AddDate(1, 0, 0)
+	fromStr := from.Format("02/01/2006")
+	toStr := to.Format("02/01/2006")
+	f, err := management.ParseFilter("LastAccessDate:" + fromStr + "-" + toStr)
+	if err != nil {
+		t.Fatal(err)
+	}
 	result := management.ApplyQueueFilters(queues, []management.Filter{f})
-	if len(result) != 2 {
-		t.Errorf("got %d, want 2", len(result))
+	if len(result) != 1 || result[0].Name != "recent" {
+		t.Errorf("got %v, want only [recent]", result)
+	}
+}
+
+func TestParseFilterInvalidNumeric(t *testing.T) {
+	_, err := management.ParseFilter("ActiveMessages:notanumber")
+	if err == nil {
+		t.Error("expected error for non-numeric value")
+	}
+}
+
+func TestParseFilterInvalidDate(t *testing.T) {
+	_, err := management.ParseFilter("CreationDate:baddate")
+	if err == nil {
+		t.Error("expected error for invalid date")
 	}
 }

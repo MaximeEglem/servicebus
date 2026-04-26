@@ -5,70 +5,117 @@ import "sort"
 func SortQueues(queues []QueueInfo, by, dir string) {
 	sort.SliceStable(queues, func(i, j int) bool {
 		a, b := queues[i], queues[j]
-		var less bool
 		switch by {
 		case "ActiveMessages":
-			less = a.ActiveMessages < b.ActiveMessages
+			if a.ActiveMessages != b.ActiveMessages {
+				if dir == "dsc" {
+					return a.ActiveMessages > b.ActiveMessages
+				}
+				return a.ActiveMessages < b.ActiveMessages
+			}
 		case "DeadLetterMessages":
-			less = a.DeadLetterMessages < b.DeadLetterMessages
+			if a.DeadLetterMessages != b.DeadLetterMessages {
+				if dir == "dsc" {
+					return a.DeadLetterMessages > b.DeadLetterMessages
+				}
+				return a.DeadLetterMessages < b.DeadLetterMessages
+			}
 		case "SizeInMegabytes":
-			less = a.SizeInMegabytes < b.SizeInMegabytes
+			if a.SizeInMegabytes != b.SizeInMegabytes {
+				if dir == "dsc" {
+					return a.SizeInMegabytes > b.SizeInMegabytes
+				}
+				return a.SizeInMegabytes < b.SizeInMegabytes
+			}
 		case "CreationDate":
-			less = a.CreatedAt.Before(b.CreatedAt)
+			if !a.CreatedAt.Equal(b.CreatedAt) {
+				if dir == "dsc" {
+					return a.CreatedAt.After(b.CreatedAt)
+				}
+				return a.CreatedAt.Before(b.CreatedAt)
+			}
 		case "LastAccessDate":
-			less = a.AccessedAt.Before(b.AccessedAt)
-		default:
-			less = a.Name < b.Name
+			if !a.AccessedAt.Equal(b.AccessedAt) {
+				if dir == "dsc" {
+					return a.AccessedAt.After(b.AccessedAt)
+				}
+				return a.AccessedAt.Before(b.AccessedAt)
+			}
 		}
-		if dir == "dsc" {
-			return !less
-		}
-		return less
+		return a.Name < b.Name
 	})
 }
 
 func SortTopics(topics []TopicInfo, by, dir string) {
 	sort.SliceStable(topics, func(i, j int) bool {
 		a, b := topics[i], topics[j]
-		var less bool
 		switch by {
 		case "SizeInMegabytes":
-			less = a.SizeInMegabytes < b.SizeInMegabytes
+			if a.SizeInMegabytes != b.SizeInMegabytes {
+				if dir == "dsc" {
+					return a.SizeInMegabytes > b.SizeInMegabytes
+				}
+				return a.SizeInMegabytes < b.SizeInMegabytes
+			}
 		case "SubscriptionCount":
-			less = a.SubscriptionCount < b.SubscriptionCount
+			if a.SubscriptionCount != b.SubscriptionCount {
+				if dir == "dsc" {
+					return a.SubscriptionCount > b.SubscriptionCount
+				}
+				return a.SubscriptionCount < b.SubscriptionCount
+			}
 		case "CreationDate":
-			less = a.CreatedAt.Before(b.CreatedAt)
+			if !a.CreatedAt.Equal(b.CreatedAt) {
+				if dir == "dsc" {
+					return a.CreatedAt.After(b.CreatedAt)
+				}
+				return a.CreatedAt.Before(b.CreatedAt)
+			}
 		case "LastAccessDate":
-			less = a.AccessedAt.Before(b.AccessedAt)
-		default:
-			less = a.Name < b.Name
+			if !a.AccessedAt.Equal(b.AccessedAt) {
+				if dir == "dsc" {
+					return a.AccessedAt.After(b.AccessedAt)
+				}
+				return a.AccessedAt.Before(b.AccessedAt)
+			}
 		}
-		if dir == "dsc" {
-			return !less
-		}
-		return less
+		return a.Name < b.Name
 	})
 }
 
 func SortSubscriptions(subs []SubscriptionInfo, by, dir string) {
 	sort.SliceStable(subs, func(i, j int) bool {
 		a, b := subs[i], subs[j]
-		var less bool
 		switch by {
 		case "ActiveMessages":
-			less = a.ActiveMessages < b.ActiveMessages
+			if a.ActiveMessages != b.ActiveMessages {
+				if dir == "dsc" {
+					return a.ActiveMessages > b.ActiveMessages
+				}
+				return a.ActiveMessages < b.ActiveMessages
+			}
 		case "DeadLetterMessages":
-			less = a.DeadLetterMessages < b.DeadLetterMessages
+			if a.DeadLetterMessages != b.DeadLetterMessages {
+				if dir == "dsc" {
+					return a.DeadLetterMessages > b.DeadLetterMessages
+				}
+				return a.DeadLetterMessages < b.DeadLetterMessages
+			}
 		case "CreationDate":
-			less = a.CreatedAt.Before(b.CreatedAt)
+			if !a.CreatedAt.Equal(b.CreatedAt) {
+				if dir == "dsc" {
+					return a.CreatedAt.After(b.CreatedAt)
+				}
+				return a.CreatedAt.Before(b.CreatedAt)
+			}
 		case "LastAccessDate":
-			less = a.AccessedAt.Before(b.AccessedAt)
-		default:
-			less = a.Name < b.Name
+			if !a.AccessedAt.Equal(b.AccessedAt) {
+				if dir == "dsc" {
+					return a.AccessedAt.After(b.AccessedAt)
+				}
+				return a.AccessedAt.Before(b.AccessedAt)
+			}
 		}
-		if dir == "dsc" {
-			return !less
-		}
-		return less
+		return a.Name < b.Name
 	})
 }
