@@ -3,6 +3,7 @@ package messaging
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -104,9 +105,14 @@ func sendFile(ctx context.Context, s Sender, path string, base SendOptions) erro
 	var props map[string]interface{}
 	if err := json.Unmarshal(data, &raw); err == nil {
 		if p, ok := raw["__properties"]; ok {
-			json.Unmarshal(p, &props)
+			if err := json.Unmarshal(p, &props); err != nil {
+				return fmt.Errorf("parsing __properties: %w", err)
+			}
 			delete(raw, "__properties")
-			data, _ = json.Marshal(raw)
+			var marshalErr error
+			if data, marshalErr = json.Marshal(raw); marshalErr != nil {
+				return fmt.Errorf("re-marshalling message body: %w", marshalErr)
+			}
 		}
 	}
 	opts := base

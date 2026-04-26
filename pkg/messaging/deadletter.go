@@ -88,7 +88,7 @@ func (r *azureDLReceiver) Purge(ctx context.Context, filters []management.Filter
 	if err != nil {
 		return 0, err
 	}
-	converted := convertReceivedMessages(msgs)
+	converted := convertMessages(msgs)
 	matched := ApplyMessageFilters(converted, filters)
 	seqSet := map[int64]bool{}
 	for _, m := range matched {
@@ -106,7 +106,9 @@ func (r *azureDLReceiver) Purge(ctx context.Context, filters []management.Filter
 			}
 			count++
 		} else {
-			r.receiver.AbandonMessage(ctx, m, nil)
+			if aErr := r.receiver.AbandonMessage(ctx, m, nil); aErr != nil {
+				return count, fmt.Errorf("abandoning seq %d: %w", seq, aErr)
+			}
 		}
 	}
 	return count, nil
@@ -121,7 +123,7 @@ func (r *azureDLReceiver) Replay(ctx context.Context, filters []management.Filte
 	if err != nil {
 		return 0, err
 	}
-	converted := convertReceivedMessages(msgs)
+	converted := convertMessages(msgs)
 	matched := ApplyMessageFilters(converted, filters)
 	seqSet := map[int64]bool{}
 	for _, m := range matched {
@@ -135,7 +137,9 @@ func (r *azureDLReceiver) Replay(ctx context.Context, filters []management.Filte
 			seq = *m.SequenceNumber
 		}
 		if !seqSet[seq] {
-			r.receiver.AbandonMessage(ctx, m, nil)
+			if aErr := r.receiver.AbandonMessage(ctx, m, nil); aErr != nil {
+				return count, fmt.Errorf("abandoning seq %d: %w", seq, aErr)
+			}
 			continue
 		}
 		newMsg := &azservicebus.Message{
@@ -154,7 +158,9 @@ func (r *azureDLReceiver) Replay(ctx context.Context, filters []management.Filte
 			sendErr = r.sender.SendMessage(ctx, newMsg, nil)
 		}
 		if sendErr != nil {
-			r.receiver.AbandonMessage(ctx, m, nil)
+			if aErr := r.receiver.AbandonMessage(ctx, m, nil); aErr != nil {
+				return count, fmt.Errorf("abandoning seq %d: %w", seq, aErr)
+			}
 			return count, sendErr
 		}
 		if err := r.receiver.CompleteMessage(ctx, m, nil); err != nil {
@@ -187,10 +193,6 @@ func convertMessages(msgs []*azservicebus.ReceivedMessage) []Message {
 		result[i] = toMessage(m)
 	}
 	return result
-}
-
-func convertReceivedMessages(msgs []*azservicebus.ReceivedMessage) []Message {
-	return convertMessages(msgs)
 }
 
 func toMessage(m *azservicebus.ReceivedMessage) Message {
