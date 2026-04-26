@@ -21,11 +21,8 @@ func TestJSONOutput(t *testing.T) {
 		t.Fatalf("Print: %v", err)
 	}
 	out := buf.String()
-	if !bytes.Contains(buf.Bytes(), []byte(`"Name"`)) {
-		t.Errorf("JSON output missing Name field: %s", out)
-	}
-	if !bytes.Contains(buf.Bytes(), []byte(`"q1"`)) {
-		t.Errorf("JSON output missing q1 value: %s", out)
+	if !bytes.Contains(buf.Bytes(), []byte(`"Name": "q1"`)) {
+		t.Errorf("JSON output missing Name: q1 pair: %s", out)
 	}
 }
 
@@ -37,8 +34,8 @@ func TestYAMLOutput(t *testing.T) {
 		t.Fatalf("Print: %v", err)
 	}
 	out := buf.String()
-	if !bytes.Contains(buf.Bytes(), []byte("q1")) {
-		t.Errorf("YAML output missing q1: %s", out)
+	if !bytes.Contains(buf.Bytes(), []byte("name: q1")) {
+		t.Errorf("YAML output missing name: q1: %s", out)
 	}
 }
 

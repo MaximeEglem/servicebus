@@ -4,11 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"reflect"
 	"strings"
 
-	"github.com/olekukonko/tablewriter"
-	"github.com/olekukonko/tablewriter/tw"
 	"gopkg.in/yaml.v3"
 )
 
@@ -59,58 +56,4 @@ func (p *Printer) Print(data any) error {
 	default:
 		return p.printTable(data)
 	}
-}
-
-func (p *Printer) printTable(data any) error {
-	v := reflect.ValueOf(data)
-	if v.Kind() != reflect.Slice || v.Len() == 0 {
-		return nil
-	}
-
-	elemType := v.Type().Elem()
-	if elemType.Kind() == reflect.Ptr {
-		elemType = elemType.Elem()
-	}
-
-	// Collect exported field names as headers
-	var headers []string
-	for i := 0; i < elemType.NumField(); i++ {
-		f := elemType.Field(i)
-		if f.IsExported() {
-			headers = append(headers, f.Name)
-		}
-	}
-
-	tbl := tablewriter.NewTable(p.out,
-		tablewriter.WithAlignment(tw.MakeAlign(len(headers), tw.AlignLeft)),
-		tablewriter.WithRendition(tw.Rendition{
-			Borders: tw.Border{
-				Left:   tw.Off,
-				Right:  tw.Off,
-				Top:    tw.Off,
-				Bottom: tw.Off,
-			},
-		}),
-	)
-
-	headerIface := make([]any, len(headers))
-	for i, h := range headers {
-		headerIface[i] = h
-	}
-	tbl.Header(headerIface...)
-
-	for i := 0; i < v.Len(); i++ {
-		elem := v.Index(i)
-		if elem.Kind() == reflect.Ptr {
-			elem = elem.Elem()
-		}
-		row := make([]any, len(headers))
-		for j := range headers {
-			row[j] = fmt.Sprintf("%v", elem.Field(j).Interface())
-		}
-		if err := tbl.Append(row...); err != nil {
-			return err
-		}
-	}
-	return tbl.Render()
 }
