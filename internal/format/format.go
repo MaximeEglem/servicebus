@@ -52,7 +52,11 @@ func (p *Printer) Print(data any) error {
 		enc.SetIndent("", "  ")
 		return enc.Encode(data)
 	case YAML:
-		return yaml.NewEncoder(p.out).Encode(data)
+		enc := yaml.NewEncoder(p.out)
+		if err := enc.Encode(data); err != nil {
+			return err
+		}
+		return enc.Close()
 	default:
 		return p.printTable(data)
 	}

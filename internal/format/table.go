@@ -25,17 +25,21 @@ func (p *Printer) printTable(data any) error {
 		elemType = elemType.Elem()
 	}
 
-	// Collect exported field names as headers
-	var headers []string
+	// Collect exported fields with their struct indices
+	type fieldMeta struct {
+		name  string
+		index int
+	}
+	var fields []fieldMeta
 	for i := 0; i < elemType.NumField(); i++ {
 		f := elemType.Field(i)
 		if f.IsExported() {
-			headers = append(headers, f.Name)
+			fields = append(fields, fieldMeta{f.Name, i})
 		}
 	}
 
 	tbl := tablewriter.NewTable(p.out,
-		tablewriter.WithAlignment(tw.MakeAlign(len(headers), tw.AlignLeft)),
+		tablewriter.WithAlignment(tw.MakeAlign(len(fields), tw.AlignLeft)),
 		tablewriter.WithRendition(tw.Rendition{
 			Borders: tw.Border{
 				Left:   tw.Off,
@@ -46,9 +50,9 @@ func (p *Printer) printTable(data any) error {
 		}),
 	)
 
-	headerIface := make([]any, len(headers))
-	for i, h := range headers {
-		headerIface[i] = h
+	headerIface := make([]any, len(fields))
+	for j, fm := range fields {
+		headerIface[j] = fm.name
 	}
 	tbl.Header(headerIface...)
 
@@ -69,9 +73,9 @@ func (p *Printer) printTable(data any) error {
 			}
 		}
 
-		row := make([]any, len(headers))
-		for j := range headers {
-			cell := fmt.Sprintf("%v", elem.Field(j).Interface())
+		row := make([]any, len(fields))
+		for j, fm := range fields {
+			cell := fmt.Sprintf("%v", elem.Field(fm.index).Interface())
 			if sprint != nil {
 				cell = sprint(cell)
 			}
