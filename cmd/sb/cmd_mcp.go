@@ -6,12 +6,22 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sync"
+	"sync/atomic"
 
 	"github.com/spf13/cobra"
 	"servicebus/internal/config"
 	"servicebus/pkg/auth"
 	"servicebus/pkg/management"
 	"servicebus/pkg/messaging"
+)
+
+// Long-lived caches keyed by context name. Avoids re-running config.Load,
+// auth.Resolve and AAD client construction on every MCP tool call.
+var (
+	mcpManagerCache sync.Map     // ctxName → management.Manager
+	mcpCredCache    sync.Map     // ctxName → *auth.Credentials
+	mcpConfig       atomic.Value // *config.Config
 )
 
 // MCP JSON-RPC types
@@ -450,34 +460,76 @@ func executeListContexts() (mcpToolResult, error) {
 }
 
 func getMCPManager(args map[string]interface{}) (management.Manager, error) {
+	ctxName, err := resolveMCPContextName(args)
+	if err != nil {
+		return nil, err
+	}
+	if cached, ok := mcpManagerCache.Load(ctxName); ok {
+		return cached.(management.Manager), nil
+	}
 	cred, err := getMCPCredentials(args)
 	if err != nil {
 		return nil, err
 	}
-	return management.NewManager(cred)
+	mgr, err := management.NewManager(cred)
+	if err != nil {
+		return nil, err
+	}
+	actual, _ := mcpManagerCache.LoadOrStore(ctxName, mgr)
+	return actual.(management.Manager), nil
 }
 
 func getMCPCredentials(args map[string]interface{}) (*auth.Credentials, error) {
+	ctxName, err := resolveMCPContextName(args)
+	if err != nil {
+		return nil, err
+	}
+	if cached, ok := mcpCredCache.Load(ctxName); ok {
+		return cached.(*auth.Credentials), nil
+	}
+	cfg, err := loadMCPConfig()
+	if err != nil {
+		return nil, err
+	}
+	cred, err := auth.Resolve(auth.Options{
+		ContextName: ctxName,
+		Config:      cfg,
+	})
+	if err != nil {
+		return nil, err
+	}
+	actual, _ := mcpCredCache.LoadOrStore(ctxName, cred)
+	return actual.(*auth.Credentials), nil
+}
+
+// resolveMCPContextName picks the context name from args, current config,
+// or last-used state file (in that order).
+func resolveMCPContextName(args map[string]interface{}) (string, error) {
+	if c, ok := args["context"].(string); ok && c != "" {
+		return c, nil
+	}
+	cfg, err := loadMCPConfig()
+	if err != nil {
+		return "", err
+	}
+	if cfg.CurrentContext != "" {
+		return cfg.CurrentContext, nil
+	}
+	if state, err := config.LoadState(); err == nil && state.Context != "" {
+		return state.Context, nil
+	}
+	return "", fmt.Errorf("no context specified and no current context configured")
+}
+
+// loadMCPConfig caches the config for the lifetime of the MCP server process.
+func loadMCPConfig() (*config.Config, error) {
+	if v := mcpConfig.Load(); v != nil {
+		return v.(*config.Config), nil
+	}
 	cfg, err := config.Load()
 	if err != nil {
 		return nil, err
 	}
-
-	ctxName := ""
-	if c, ok := args["context"].(string); ok {
-		ctxName = c
-	}
-	if ctxName == "" {
-		ctxName = cfg.CurrentContext
-	}
-	if ctxName == "" {
-		if state, err := config.LoadState(); err == nil {
-			ctxName = state.Context
-		}
-	}
-
-	return auth.Resolve(auth.Options{
-		ContextName: ctxName,
-		Config:      cfg,
-	})
+	mcpConfig.Store(cfg)
+	return cfg, nil
 }

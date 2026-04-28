@@ -103,14 +103,47 @@ func newClient(cred *auth.Credentials) (*azservicebus.Client, error) {
 }
 
 func (r *azureDLReceiver) Peek(ctx context.Context, max int) ([]Message, error) {
-	if max <= 0 {
-		max = 1000
+	// max <= 0 means "stream all" (until server returns empty).
+	unlimited := max <= 0
+	// Stream pages until we hit max or Azure stops returning. The SDK caps
+	// each call (~250-500 server-side); we walk forward via FromSequenceNumber.
+	const pageSize = 250
+	var (
+		all       []Message
+		fromSeq   *int64
+		remaining = max
+	)
+	for unlimited || remaining > 0 {
+		batch := pageSize
+		if !unlimited && remaining < batch {
+			batch = remaining
+		}
+		opts := &azservicebus.PeekMessagesOptions{}
+		if fromSeq != nil {
+			opts.FromSequenceNumber = fromSeq
+		}
+		peeked, err := r.receiver.PeekMessages(ctx, batch, opts)
+		if err != nil {
+			return all, err
+		}
+		if len(peeked) == 0 {
+			break
+		}
+		all = append(all, convertMessages(peeked)...)
+		last := peeked[len(peeked)-1]
+		if last.SequenceNumber == nil {
+			break
+		}
+		next := *last.SequenceNumber + 1
+		fromSeq = &next
+		if !unlimited {
+			remaining -= len(peeked)
+		}
+		if len(peeked) < batch {
+			break
+		}
 	}
-	peeked, err := r.receiver.PeekMessages(ctx, max, nil)
-	if err != nil {
-		return nil, err
-	}
-	return convertMessages(peeked), nil
+	return all, nil
 }
 
 func (r *azureDLReceiver) Purge(ctx context.Context, filters []management.Filter, opts DLOptions) (int, error) {
@@ -123,39 +156,68 @@ func (r *azureDLReceiver) Purge(ctx context.Context, filters []management.Filter
 	resumeFromSeq := state.LastSequence
 	nextProgress := nextProgressMark(processed, rt.progressEvery)
 
-	for {
+	// Prefetch pipeline: receiver goroutine pulls the next batch while the
+	// worker pool is still completing the current one.
+	batchFetch := func(remaining int) ([]*azservicebus.ReceivedMessage, error) {
 		batchSize := rt.batchSize
-		if rt.max > 0 {
-			remaining := rt.max - processed
-			if remaining <= 0 {
-				return processed, nil
-			}
-			if remaining < batchSize {
-				batchSize = remaining
-			}
+		if rt.max > 0 && remaining < batchSize {
+			batchSize = remaining
 		}
-
 		var msgs []*azservicebus.ReceivedMessage
-		err = withRetry(ctx, rt.retryCount, rt.retryDelay, rt.retryMax, func() error {
+		err := withRetry(ctx, rt.retryCount, rt.retryDelay, rt.retryMax, func() error {
 			var recvErr error
 			msgs, recvErr = r.receiver.ReceiveMessages(ctx, batchSize, nil)
 			return recvErr
 		})
-		if err != nil {
-			return processed, err
+		return msgs, err
+	}
+
+	type fetched struct {
+		msgs []*azservicebus.ReceivedMessage
+		err  error
+	}
+	nextCh := make(chan fetched, 1)
+	kickoffNext := func(remaining int) {
+		go func() {
+			msgs, err := batchFetch(remaining)
+			nextCh <- fetched{msgs, err}
+		}()
+	}
+
+	// Initial fetch.
+	remaining := rt.max - processed
+	if rt.max == 0 {
+		remaining = rt.batchSize
+	}
+	kickoffNext(remaining)
+
+	for {
+		curr := <-nextCh
+		if curr.err != nil {
+			return processed, curr.err
 		}
-		if len(msgs) == 0 {
+		if len(curr.msgs) == 0 {
 			return processed, nil
 		}
 
-		converted := convertMessages(msgs)
+		// Kick off fetch for the next batch BEFORE processing this one.
+		nextRemaining := rt.batchSize
+		if rt.max > 0 {
+			nextRemaining = rt.max - processed - len(curr.msgs)
+		}
+		kickNext := nextRemaining > 0 || rt.max == 0
+		if kickNext {
+			kickoffNext(nextRemaining)
+		}
+
+		converted := convertMessages(curr.msgs)
 		matched := ApplyMessageFilters(converted, filters)
 		seqSet := make(map[int64]bool, len(matched))
 		for _, m := range matched {
 			seqSet[m.SequenceNumber] = true
 		}
 
-		purged, maxSeq, err := r.processPurgeBatch(ctx, msgs, seqSet, rt, resumeFromSeq)
+		purged, maxSeq, err := r.processPurgeBatch(ctx, curr.msgs, seqSet, rt, resumeFromSeq)
 		processed += purged
 		if err != nil {
 			return processed, err
@@ -170,6 +232,15 @@ func (r *azureDLReceiver) Purge(ctx context.Context, filters []management.Filter
 			return processed, err
 		}
 		nextProgress = maybePrintProgress("purge", processed, rt.progressEvery, nextProgress)
+
+		if !kickNext {
+			return processed, nil
+		}
+		if rt.max > 0 && processed >= rt.max {
+			// Drain any in-flight prefetch result.
+			go func() { <-nextCh }()
+			return processed, nil
+		}
 	}
 }
 
@@ -183,39 +254,64 @@ func (r *azureDLReceiver) Replay(ctx context.Context, filters []management.Filte
 	resumeFromSeq := state.LastSequence
 	nextProgress := nextProgressMark(processed, rt.progressEvery)
 
-	for {
+	batchFetch := func(remaining int) ([]*azservicebus.ReceivedMessage, error) {
 		batchSize := rt.batchSize
-		if rt.max > 0 {
-			remaining := rt.max - processed
-			if remaining <= 0 {
-				return processed, nil
-			}
-			if remaining < batchSize {
-				batchSize = remaining
-			}
+		if rt.max > 0 && remaining < batchSize {
+			batchSize = remaining
 		}
-
 		var msgs []*azservicebus.ReceivedMessage
-		err = withRetry(ctx, rt.retryCount, rt.retryDelay, rt.retryMax, func() error {
+		err := withRetry(ctx, rt.retryCount, rt.retryDelay, rt.retryMax, func() error {
 			var recvErr error
 			msgs, recvErr = r.receiver.ReceiveMessages(ctx, batchSize, nil)
 			return recvErr
 		})
-		if err != nil {
-			return processed, err
+		return msgs, err
+	}
+
+	type fetched struct {
+		msgs []*azservicebus.ReceivedMessage
+		err  error
+	}
+	nextCh := make(chan fetched, 1)
+	kickoffNext := func(remaining int) {
+		go func() {
+			msgs, err := batchFetch(remaining)
+			nextCh <- fetched{msgs, err}
+		}()
+	}
+
+	remaining := rt.max - processed
+	if rt.max == 0 {
+		remaining = rt.batchSize
+	}
+	kickoffNext(remaining)
+
+	for {
+		curr := <-nextCh
+		if curr.err != nil {
+			return processed, curr.err
 		}
-		if len(msgs) == 0 {
+		if len(curr.msgs) == 0 {
 			return processed, nil
 		}
 
-		converted := convertMessages(msgs)
+		nextRemaining := rt.batchSize
+		if rt.max > 0 {
+			nextRemaining = rt.max - processed - len(curr.msgs)
+		}
+		kickNext := nextRemaining > 0 || rt.max == 0
+		if kickNext {
+			kickoffNext(nextRemaining)
+		}
+
+		converted := convertMessages(curr.msgs)
 		matched := ApplyMessageFilters(converted, filters)
 		seqSet := make(map[int64]bool, len(matched))
 		for _, m := range matched {
 			seqSet[m.SequenceNumber] = true
 		}
 
-		replayed, maxSeq, err := r.processReplayBatch(ctx, msgs, seqSet, rt, resumeFromSeq)
+		replayed, maxSeq, err := r.processReplayBatch(ctx, curr.msgs, seqSet, rt, resumeFromSeq)
 		processed += replayed
 		if err != nil {
 			return processed, err
@@ -230,6 +326,14 @@ func (r *azureDLReceiver) Replay(ctx context.Context, filters []management.Filte
 			return processed, err
 		}
 		nextProgress = maybePrintProgress("replay", processed, rt.progressEvery, nextProgress)
+
+		if !kickNext {
+			return processed, nil
+		}
+		if rt.max > 0 && processed >= rt.max {
+			go func() { <-nextCh }()
+			return processed, nil
+		}
 	}
 }
 

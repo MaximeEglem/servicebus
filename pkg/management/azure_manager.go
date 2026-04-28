@@ -4,8 +4,9 @@ import (
 	"context"
 	"sync"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/messaging/azservicebus/admin"
 	"servicebus/pkg/auth"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/messaging/azservicebus/admin"
 )
 
 type azureManager struct {
@@ -101,19 +102,42 @@ func (m *azureManager) ListQueues(ctx context.Context, opts ListOptions) ([]Queu
 }
 
 func (m *azureManager) GetQueue(ctx context.Context, name string) (*QueueInfo, error) {
-	resp, err := m.client.GetQueue(ctx, name, nil)
-	if err != nil {
-		return nil, err
+	var (
+		props   *admin.QueueProperties
+		rt      *admin.QueueRuntimeProperties
+		propErr error
+		rtErr   error
+		wg      sync.WaitGroup
+	)
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		resp, err := m.client.GetQueue(ctx, name, nil)
+		if err != nil {
+			propErr = err
+			return
+		}
+		props = &resp.QueueProperties
+	}()
+	go func() {
+		defer wg.Done()
+		resp, err := m.client.GetQueueRuntimeProperties(ctx, name, nil)
+		if err != nil {
+			rtErr = err
+			return
+		}
+		if resp != nil {
+			rt = &resp.QueueRuntimeProperties
+		}
+	}()
+	wg.Wait()
+	if propErr != nil {
+		return nil, propErr
 	}
-	rt, err := m.client.GetQueueRuntimeProperties(ctx, name, nil)
-	if err != nil {
-		return nil, err
+	if rtErr != nil {
+		return nil, rtErr
 	}
-	var rp *admin.QueueRuntimeProperties
-	if rt != nil {
-		rp = &rt.QueueRuntimeProperties
-	}
-	info := queueInfoFromProps(name, &resp.QueueProperties, rp)
+	info := queueInfoFromProps(name, props, rt)
 	return &info, nil
 }
 
@@ -231,19 +255,42 @@ func (m *azureManager) ListTopics(ctx context.Context, opts ListOptions) ([]Topi
 }
 
 func (m *azureManager) GetTopic(ctx context.Context, name string) (*TopicInfo, error) {
-	resp, err := m.client.GetTopic(ctx, name, nil)
-	if err != nil {
-		return nil, err
+	var (
+		props   *admin.TopicProperties
+		rt      *admin.TopicRuntimeProperties
+		propErr error
+		rtErr   error
+		wg      sync.WaitGroup
+	)
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		resp, err := m.client.GetTopic(ctx, name, nil)
+		if err != nil {
+			propErr = err
+			return
+		}
+		props = &resp.TopicProperties
+	}()
+	go func() {
+		defer wg.Done()
+		resp, err := m.client.GetTopicRuntimeProperties(ctx, name, nil)
+		if err != nil {
+			rtErr = err
+			return
+		}
+		if resp != nil {
+			rt = &resp.TopicRuntimeProperties
+		}
+	}()
+	wg.Wait()
+	if propErr != nil {
+		return nil, propErr
 	}
-	rt, err := m.client.GetTopicRuntimeProperties(ctx, name, nil)
-	if err != nil {
-		return nil, err
+	if rtErr != nil {
+		return nil, rtErr
 	}
-	var rp *admin.TopicRuntimeProperties
-	if rt != nil {
-		rp = &rt.TopicRuntimeProperties
-	}
-	info := topicInfoFromProps(name, &resp.TopicProperties, rp)
+	info := topicInfoFromProps(name, props, rt)
 	return &info, nil
 }
 

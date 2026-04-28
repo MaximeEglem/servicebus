@@ -114,7 +114,7 @@ func buildDLSViewCmd() *cobra.Command {
 				max = cfg.Settings.MaxItems
 			}
 			if gf.all {
-				max = 1000
+				max = 0 // stream until empty
 			}
 			msgs, err := recv.Peek(context.Background(), max)
 			if err != nil {
@@ -315,7 +315,7 @@ func buildDLSExportCmd() *cobra.Command {
 				max = cfg.Settings.MaxItems
 			}
 			if gf.all {
-				max = 1000
+				max = 0 // stream until empty
 			}
 			if outPath == "" {
 				outPath = filepath.Join(expandDir(cfg.Settings.WorkingDirectory),
