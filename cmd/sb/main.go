@@ -53,6 +53,7 @@ func buildRoot() *cobra.Command {
 	root.Flags().Bool("settings", false, "Show settings (alias for 'sb config')")
 
 	root.AddCommand(
+		buildVersionCmd(),
 		buildUseCmd(),
 		buildConfigCmd(),
 		buildQueueCmd(),
