@@ -55,6 +55,7 @@ func buildRoot() *cobra.Command {
 
 	root.AddCommand(
 		buildVersionCmd(),
+		buildOverviewCmd(),
 		buildUseCmd(),
 		buildConfigCmd(),
 		buildQueueCmd(),
