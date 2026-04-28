@@ -34,6 +34,7 @@ func buildDLSCmd() *cobra.Command {
 		buildDLSPurgeCmd(),
 		buildDLSReplayCmd(),
 		buildDLSExportCmd(),
+		buildDLSStatsCmd(),
 	)
 	return cmd
 }

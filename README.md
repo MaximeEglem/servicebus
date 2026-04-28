@@ -430,6 +430,16 @@ sb dlq -c dev -n orders x
 sb dlq -c dev -n orders x --out ./orders-dlq.json
 ```
 
+Group dead-letter messages by error type, description, or body hash:
+
+```bash
+sb dlq stats -c dev -n orders                       # default: by reason (ErrorType)
+sb dlq stats -c dev -n orders --top 10 --all
+sb dlq stats -c dev -n orders --by description
+sb dlq stats -c dev -n orders --by body-hash --all  # find duplicate payloads
+sb dlq stats -c dev -n orders -o json --all         # for piping into jq
+```
+
 ## DLS Commands (Subscription Dead Letters)
 
 List subscriptions with dead letters:
@@ -481,6 +491,13 @@ Export dead-letter messages:
 sb dls -c dev -t events -n email-sub x
 ```
 
+Group subscription dead-letter messages:
+
+```bash
+sb dls stats -c dev -t events -n email-sub --all
+sb dls stats -c dev -t events -n email-sub --by description --top 5
+```
+
 ## Output Formats
 
 Default output is table. You can switch to JSON or YAML:
@@ -511,6 +528,12 @@ sb mcp
 ```
 
 ## Changelog
+
+### v0.6.0 — DLQ aggregation
+
+- New `sb dlq stats` and `sb dls stats` subcommands group dead-letter messages by `--by reason` (default, a.k.a. ErrorType), `--by description`, or `--by body-hash` (for duplicate-payload discovery).
+- `--top N` returns the busiest N groups; existing `-f` filters apply before aggregation; respects `-o table|json|yaml`.
+- Backed by the streaming `Peek` from v0.3.0, so `--all` aggregates the full DLQ without the old 250-message cap.
 
 ### v0.5.0 — Determinism, caching and quiet mode
 

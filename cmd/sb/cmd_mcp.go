@@ -10,11 +10,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/spf13/cobra"
 	"servicebus/internal/config"
 	"servicebus/pkg/auth"
 	"servicebus/pkg/management"
 	"servicebus/pkg/messaging"
+
+	"github.com/spf13/cobra"
 )
 
 // Long-lived caches keyed by context name. Avoids re-running config.Load,
@@ -64,9 +65,9 @@ type mcpError struct {
 }
 
 type mcpInitResult struct {
-	ProtocolVersion string       `json:"protocolVersion"`
-	Capabilities    mcpCaps      `json:"capabilities"`
-	ServerInfo      mcpServer    `json:"serverInfo"`
+	ProtocolVersion string    `json:"protocolVersion"`
+	Capabilities    mcpCaps   `json:"capabilities"`
+	ServerInfo      mcpServer `json:"serverInfo"`
 }
 
 type mcpCaps struct {

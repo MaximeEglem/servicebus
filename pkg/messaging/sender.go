@@ -11,8 +11,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/messaging/azservicebus"
 	"servicebus/pkg/auth"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/messaging/azservicebus"
 )
 
 // Sender is the unit-testable interface for sending a single message.

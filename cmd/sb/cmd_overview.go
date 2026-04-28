@@ -198,7 +198,7 @@ func overviewCachePath(ctxName string, deep bool) string {
 }
 
 type cachedOverview struct {
-	CachedAt time.Time         `json:"cached_at"`
+	CachedAt time.Time        `json:"cached_at"`
 	Metrics  namespaceMetrics `json:"metrics"`
 }
 

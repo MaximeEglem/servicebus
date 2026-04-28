@@ -33,6 +33,7 @@ func buildDLQCmd() *cobra.Command {
 		buildDLQPurgeCmd(),
 		buildDLQReplayCmd(),
 		buildDLQExportCmd(),
+		buildDLQStatsCmd(),
 	)
 	return cmd
 }
