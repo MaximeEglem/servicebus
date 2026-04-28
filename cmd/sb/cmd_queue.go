@@ -96,14 +96,7 @@ func buildQueueExportCmd() *cobra.Command {
 				outPath = filepath.Join(expandDir(cfg.Settings.WorkingDirectory),
 					fmt.Sprintf("queues-%s.json", time.Now().Format("20060102-150405")))
 			}
-			data, err := json.MarshalIndent(queues, "", "  ")
-			if err != nil {
-				return err
-			}
-			if err := os.MkdirAll(filepath.Dir(outPath), 0755); err != nil {
-				return err
-			}
-			if err := os.WriteFile(outPath, data, 0644); err != nil {
+			if err := exportJSON(queues, outPath); err != nil {
 				return err
 			}
 			fmt.Printf("Exported %d queues to %s\n", len(queues), outPath)
@@ -417,14 +410,20 @@ func expandDir(path string) string {
 }
 
 func exportJSON(data any, outPath string) error {
-	b, err := json.MarshalIndent(data, "", "  ")
-	if err != nil {
-		return err
-	}
 	if err := os.MkdirAll(filepath.Dir(outPath), 0755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(outPath, b, 0644); err != nil {
+	f, err := os.Create(outPath)
+	if err != nil {
+		return err
+	}
+	enc := json.NewEncoder(f)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(data); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
 		return err
 	}
 	fmt.Printf("Exported to %s\n", outPath)

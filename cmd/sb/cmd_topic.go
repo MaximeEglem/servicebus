@@ -2,9 +2,7 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -90,14 +88,7 @@ func buildTopicExportCmd() *cobra.Command {
 				outPath = filepath.Join(expandDir(cfg.Settings.WorkingDirectory),
 					fmt.Sprintf("topics-%s.json", time.Now().Format("20060102-150405")))
 			}
-			data, err := json.MarshalIndent(topics, "", "  ")
-			if err != nil {
-				return err
-			}
-			if err := os.MkdirAll(filepath.Dir(outPath), 0755); err != nil {
-				return err
-			}
-			if err := os.WriteFile(outPath, data, 0644); err != nil {
+			if err := exportJSON(topics, outPath); err != nil {
 				return err
 			}
 			fmt.Printf("Exported %d topics to %s\n", len(topics), outPath)

@@ -119,6 +119,49 @@ func (p *Printer) printTable(data any) error {
 	_ = tty // tty used for title accent only
 	tbl.Header(headerIface...)
 
+	// Pre-resolve per-column formatters once. Avoids per-cell interface
+	// conversion and type-switch on hot paths with thousands of rows.
+	cellFmts := make([]func(reflect.Value) string, len(fields))
+	timeType := reflect.TypeOf(time.Time{})
+	for j, fm := range fields {
+		ft := elemType.Field(fm.index).Type
+		switch {
+		case ft == timeType:
+			cellFmts[j] = func(fv reflect.Value) string {
+				t := fv.Interface().(time.Time)
+				if t.IsZero() {
+					return ""
+				}
+				return t.Format("2006-01-02 15:04:05")
+			}
+		case ft.Kind() == reflect.Ptr && ft.Elem() == timeType:
+			cellFmts[j] = func(fv reflect.Value) string {
+				if fv.IsNil() {
+					return ""
+				}
+				t := fv.Elem().Interface().(time.Time)
+				if t.IsZero() {
+					return ""
+				}
+				return t.Format("2006-01-02 15:04:05")
+			}
+		case ft.Kind() == reflect.String:
+			cellFmts[j] = func(fv reflect.Value) string { return fv.String() }
+		case ft.Kind() == reflect.Bool:
+			cellFmts[j] = func(fv reflect.Value) string { return strconv.FormatBool(fv.Bool()) }
+		case ft.Kind() >= reflect.Int && ft.Kind() <= reflect.Int64:
+			cellFmts[j] = func(fv reflect.Value) string { return strconv.FormatInt(fv.Int(), 10) }
+		case ft.Kind() >= reflect.Uint && ft.Kind() <= reflect.Uint64:
+			cellFmts[j] = func(fv reflect.Value) string { return strconv.FormatUint(fv.Uint(), 10) }
+		case ft.Kind() == reflect.Float32 || ft.Kind() == reflect.Float64:
+			cellFmts[j] = func(fv reflect.Value) string {
+				return strconv.FormatFloat(fv.Float(), 'f', -1, 64)
+			}
+		default:
+			cellFmts[j] = func(fv reflect.Value) string { return fmt.Sprintf("%v", fv.Interface()) }
+		}
+	}
+
 	for i := 0; i < v.Len(); i++ {
 		elem := v.Index(i)
 		if elem.Kind() == reflect.Ptr {
@@ -139,7 +182,7 @@ func (p *Printer) printTable(data any) error {
 		row := make([]any, len(fields))
 		for j, fm := range fields {
 			fv := elem.Field(fm.index)
-			cell := formatTableCell(fv.Interface())
+			cell := cellFmts[j](fv)
 			if showBars {
 				if max, ok := numericMax[fm.index]; ok && max > 0 {
 					if num, ok := numericValueFromReflect(fv); ok {

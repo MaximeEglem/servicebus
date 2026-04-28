@@ -110,18 +110,19 @@ func ApplyQueueFilters(queues []QueueInfo, filters []Filter) []QueueInfo {
 }
 
 func queueMatchesAll(q QueueInfo, filters []Filter) bool {
+	nameLower := strings.ToLower(q.Name)
 	for _, f := range filters {
-		if !queueMatchesFilter(q, f) {
+		if !queueMatchesFilter(q, nameLower, f) {
 			return false
 		}
 	}
 	return true
 }
 
-func queueMatchesFilter(q QueueInfo, f Filter) bool {
+func queueMatchesFilter(q QueueInfo, nameLower string, f Filter) bool {
 	switch f.Kind {
 	case FilterKindKeyword:
-		return strings.Contains(strings.ToLower(q.Name), f.Keyword)
+		return strings.Contains(nameLower, f.Keyword)
 	case FilterKindNumericField:
 		val := queueNumericField(q, f.Field)
 		return val >= f.MinValue && val <= f.MaxValue
@@ -169,18 +170,19 @@ func ApplyTopicFilters(topics []TopicInfo, filters []Filter) []TopicInfo {
 }
 
 func topicMatchesAll(t TopicInfo, filters []Filter) bool {
+	nameLower := strings.ToLower(t.Name)
 	for _, f := range filters {
-		if !topicMatchesFilter(t, f) {
+		if !topicMatchesFilter(t, nameLower, f) {
 			return false
 		}
 	}
 	return true
 }
 
-func topicMatchesFilter(t TopicInfo, f Filter) bool {
+func topicMatchesFilter(t TopicInfo, nameLower string, f Filter) bool {
 	switch f.Kind {
 	case FilterKindKeyword:
-		return strings.Contains(strings.ToLower(t.Name), f.Keyword)
+		return strings.Contains(nameLower, f.Keyword)
 	case FilterKindNumericField:
 		switch f.Field {
 		case "SizeInMegabytes":
@@ -218,18 +220,19 @@ func ApplySubscriptionFilters(subs []SubscriptionInfo, filters []Filter) []Subsc
 }
 
 func subMatchesAll(s SubscriptionInfo, filters []Filter) bool {
+	nameLower := strings.ToLower(s.Name)
 	for _, f := range filters {
-		if !subMatchesFilter(s, f) {
+		if !subMatchesFilter(s, nameLower, f) {
 			return false
 		}
 	}
 	return true
 }
 
-func subMatchesFilter(s SubscriptionInfo, f Filter) bool {
+func subMatchesFilter(s SubscriptionInfo, nameLower string, f Filter) bool {
 	switch f.Kind {
 	case FilterKindKeyword:
-		return strings.Contains(strings.ToLower(s.Name), f.Keyword)
+		return strings.Contains(nameLower, f.Keyword)
 	case FilterKindNumericField:
 		switch f.Field {
 		case "ActiveMessages":
