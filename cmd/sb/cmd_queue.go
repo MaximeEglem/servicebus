@@ -325,8 +325,10 @@ func newListProgress(label string, total int) *listProgress {
 		total = 1
 	}
 	enabled := false
-	if stat, err := os.Stderr.Stat(); err == nil {
-		enabled = (stat.Mode() & os.ModeCharDevice) != 0
+	if !gf.quiet {
+		if stat, err := os.Stderr.Stat(); err == nil {
+			enabled = (stat.Mode() & os.ModeCharDevice) != 0
+		}
 	}
 	return &listProgress{label: label, total: total, enabled: enabled}
 }

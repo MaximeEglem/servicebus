@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
+	"servicebus/internal/config"
 	"servicebus/pkg/management"
 
 	"github.com/fatih/color"
@@ -15,14 +18,18 @@ import (
 
 func buildOverviewCmd() *cobra.Command {
 	var deep bool
+	var useCache bool
+	var cacheTTL time.Duration
 	cmd := &cobra.Command{
 		Use:   "overview",
 		Short: "Show namespace metrics: queue, topic and subscription counts",
 		RunE: func(c *cobra.Command, args []string) error {
-			return runOverview(c, args, deep)
+			return runOverview(c, args, deep, useCache, cacheTTL)
 		},
 	}
 	cmd.Flags().BoolVar(&deep, "deep", false, "Fetch subscription DLQ details (slower)")
+	cmd.Flags().BoolVar(&useCache, "cache", false, "Use cached overview if fresh; persist result to disk")
+	cmd.Flags().DurationVar(&cacheTTL, "cache-ttl", 5*time.Minute, "Cache freshness window for --cache")
 	return cmd
 }
 
@@ -38,7 +45,24 @@ type namespaceMetrics struct {
 	DeepMode            bool
 }
 
-func runOverview(_ *cobra.Command, _ []string, deep bool) error {
+func runOverview(_ *cobra.Command, _ []string, deep, useCache bool, cacheTTL time.Duration) error {
+	ctxName := gf.context
+	if ctxName == "" {
+		if cfg, err := config.Load(); err == nil {
+			ctxName = cfg.CurrentContext
+		}
+	}
+	cacheFile := overviewCachePath(ctxName, deep)
+	if useCache {
+		if m, ok := loadOverviewCache(cacheFile, cacheTTL); ok {
+			printOverview(m)
+			if !gf.quiet {
+				fmt.Fprintf(os.Stderr, "(served from cache: %s)\n", cacheFile)
+			}
+			return nil
+		}
+	}
+
 	mgr, cfg, err := newManager()
 	if err != nil {
 		return err
@@ -153,7 +177,56 @@ func runOverview(_ *cobra.Command, _ []string, deep bool) error {
 	}
 
 	printOverview(m)
+	if useCache {
+		if err := saveOverviewCache(cacheFile, m); err != nil && !gf.quiet {
+			fmt.Fprintf(os.Stderr, "warning: cache write failed: %v\n", err)
+		}
+	}
 	return nil
+}
+
+func overviewCachePath(ctxName string, deep bool) string {
+	suffix := "shallow"
+	if deep {
+		suffix = "deep"
+	}
+	name := ctxName
+	if name == "" {
+		name = "_default"
+	}
+	return filepath.Join(config.CacheDir(), fmt.Sprintf("overview-%s-%s.json", name, suffix))
+}
+
+type cachedOverview struct {
+	CachedAt time.Time         `json:"cached_at"`
+	Metrics  namespaceMetrics `json:"metrics"`
+}
+
+func loadOverviewCache(path string, ttl time.Duration) (namespaceMetrics, bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return namespaceMetrics{}, false
+	}
+	var c cachedOverview
+	if err := json.Unmarshal(data, &c); err != nil {
+		return namespaceMetrics{}, false
+	}
+	if time.Since(c.CachedAt) > ttl {
+		return namespaceMetrics{}, false
+	}
+	return c.Metrics, true
+}
+
+func saveOverviewCache(path string, m namespaceMetrics) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+	c := cachedOverview{CachedAt: time.Now(), Metrics: m}
+	data, err := json.Marshal(c)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0644)
 }
 
 func printOverview(m namespaceMetrics) {
@@ -242,8 +315,10 @@ type spinner struct {
 
 func newSpinner(msg string) *spinner {
 	enabled := false
-	if stat, err := os.Stderr.Stat(); err == nil {
-		enabled = (stat.Mode() & os.ModeCharDevice) != 0
+	if !gf.quiet {
+		if stat, err := os.Stderr.Stat(); err == nil {
+			enabled = (stat.Mode() & os.ModeCharDevice) != 0
+		}
 	}
 	return &spinner{msg: msg, done: make(chan struct{}), enabled: enabled}
 }

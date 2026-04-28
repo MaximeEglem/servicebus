@@ -8,6 +8,7 @@ import (
 	"os"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/spf13/cobra"
 	"servicebus/internal/config"
@@ -18,10 +19,28 @@ import (
 
 // Long-lived caches keyed by context name. Avoids re-running config.Load,
 // auth.Resolve and AAD client construction on every MCP tool call.
+// A TTL ensures that on-disk config changes are picked up within mcpCacheTTL.
+const mcpCacheTTL = 5 * time.Minute
+
+type cachedManager struct {
+	mgr management.Manager
+	at  time.Time
+}
+
+type cachedCred struct {
+	cred *auth.Credentials
+	at   time.Time
+}
+
+type cachedConfig struct {
+	cfg *config.Config
+	at  time.Time
+}
+
 var (
-	mcpManagerCache sync.Map     // ctxName → management.Manager
-	mcpCredCache    sync.Map     // ctxName → *auth.Credentials
-	mcpConfig       atomic.Value // *config.Config
+	mcpManagerCache sync.Map     // ctxName → *cachedManager
+	mcpCredCache    sync.Map     // ctxName → *cachedCred
+	mcpConfig       atomic.Value // *cachedConfig
 )
 
 // MCP JSON-RPC types
@@ -464,8 +483,11 @@ func getMCPManager(args map[string]interface{}) (management.Manager, error) {
 	if err != nil {
 		return nil, err
 	}
-	if cached, ok := mcpManagerCache.Load(ctxName); ok {
-		return cached.(management.Manager), nil
+	if v, ok := mcpManagerCache.Load(ctxName); ok {
+		c := v.(*cachedManager)
+		if time.Since(c.at) < mcpCacheTTL {
+			return c.mgr, nil
+		}
 	}
 	cred, err := getMCPCredentials(args)
 	if err != nil {
@@ -475,8 +497,8 @@ func getMCPManager(args map[string]interface{}) (management.Manager, error) {
 	if err != nil {
 		return nil, err
 	}
-	actual, _ := mcpManagerCache.LoadOrStore(ctxName, mgr)
-	return actual.(management.Manager), nil
+	mcpManagerCache.Store(ctxName, &cachedManager{mgr: mgr, at: time.Now()})
+	return mgr, nil
 }
 
 func getMCPCredentials(args map[string]interface{}) (*auth.Credentials, error) {
@@ -484,8 +506,11 @@ func getMCPCredentials(args map[string]interface{}) (*auth.Credentials, error) {
 	if err != nil {
 		return nil, err
 	}
-	if cached, ok := mcpCredCache.Load(ctxName); ok {
-		return cached.(*auth.Credentials), nil
+	if v, ok := mcpCredCache.Load(ctxName); ok {
+		c := v.(*cachedCred)
+		if time.Since(c.at) < mcpCacheTTL {
+			return c.cred, nil
+		}
 	}
 	cfg, err := loadMCPConfig()
 	if err != nil {
@@ -498,8 +523,8 @@ func getMCPCredentials(args map[string]interface{}) (*auth.Credentials, error) {
 	if err != nil {
 		return nil, err
 	}
-	actual, _ := mcpCredCache.LoadOrStore(ctxName, cred)
-	return actual.(*auth.Credentials), nil
+	mcpCredCache.Store(ctxName, &cachedCred{cred: cred, at: time.Now()})
+	return cred, nil
 }
 
 // resolveMCPContextName picks the context name from args, current config,
@@ -521,15 +546,18 @@ func resolveMCPContextName(args map[string]interface{}) (string, error) {
 	return "", fmt.Errorf("no context specified and no current context configured")
 }
 
-// loadMCPConfig caches the config for the lifetime of the MCP server process.
+// loadMCPConfig caches the config with a TTL so on-disk edits are picked up.
 func loadMCPConfig() (*config.Config, error) {
 	if v := mcpConfig.Load(); v != nil {
-		return v.(*config.Config), nil
+		c := v.(*cachedConfig)
+		if time.Since(c.at) < mcpCacheTTL {
+			return c.cfg, nil
+		}
 	}
 	cfg, err := config.Load()
 	if err != nil {
 		return nil, err
 	}
-	mcpConfig.Store(cfg)
+	mcpConfig.Store(&cachedConfig{cfg: cfg, at: time.Now()})
 	return cfg, nil
 }

@@ -1,5 +1,7 @@
 package management
 
+import "sort"
+
 // QueueCompareResult is one row in the N-way queue comparison.
 type QueueCompareResult struct {
 	Name      string
@@ -59,6 +61,7 @@ func CompareQueues(contexts map[string][]QueueInfo) []QueueCompareResult {
 		}
 		results = append(results, r)
 	}
+	sort.Slice(results, func(i, j int) bool { return results[i].Name < results[j].Name })
 	return results
 }
 
@@ -101,5 +104,6 @@ func CompareTopics(contexts map[string][]TopicInfo) []TopicCompareResult {
 		}
 		results = append(results, r)
 	}
+	sort.Slice(results, func(i, j int) bool { return results[i].Name < results[j].Name })
 	return results
 }

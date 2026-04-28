@@ -15,3 +15,4 @@ func ConfigDir() string {
 
 func ConfigPath() string { return filepath.Join(ConfigDir(), "config.yaml") }
 func StatePath() string  { return filepath.Join(ConfigDir(), "state.yaml") }
+func CacheDir() string   { return filepath.Join(ConfigDir(), "cache") }

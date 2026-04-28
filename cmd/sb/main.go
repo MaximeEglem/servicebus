@@ -21,6 +21,7 @@ type globalFlags struct {
 	filters          []string
 	name             string
 	topic            string
+	quiet            bool
 }
 
 var gf globalFlags
@@ -44,6 +45,7 @@ func buildRoot() *cobra.Command {
 	root.PersistentFlags().StringVar(&gf.connectionString, "connection-string", "", "Connection string (overrides all other auth)")
 	root.PersistentFlags().StringVar(&gf.namespace, "namespace", "", "Azure AD namespace (e.g. ns.servicebus.windows.net)")
 	root.PersistentFlags().StringVarP(&gf.output, "output", "o", "table", "Output format: table, json, yaml")
+	root.PersistentFlags().BoolVarP(&gf.quiet, "quiet", "q", false, "Suppress progress bars and informational stderr output (auto-on when stderr is not a TTY)")
 
 	root.Flags().IntVarP(&gf.max, "max", "m", 0, "Max results (0 = use MaxItems setting)")
 	root.Flags().BoolVarP(&gf.all, "all", "a", false, "Return all results")
