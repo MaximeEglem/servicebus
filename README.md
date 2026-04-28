@@ -241,6 +241,7 @@ Available for most commands:
 - --connection-string
 - --namespace
 - -o, --output (table, json, yaml)
+- -q, --quiet — suppress progress bars and spinners (auto-on when stderr is not a TTY); useful for piping output and CI
 
 Common list flags:
 
@@ -250,6 +251,19 @@ Common list flags:
 - -f, --filter (repeatable)
 - -n, --name
 - -t, --topic (where relevant)
+
+### Overview command
+
+`sb overview` reports namespace metrics. Two flags tune cost vs freshness:
+
+- `--deep` — also fetch per-subscription DLQ counts (extra HTTP calls)
+- `--cache` — read from `~/.sb/cache/overview-<ctx>-<mode>.json` if fresh; on miss, refresh and persist
+- `--cache-ttl` — freshness window for `--cache` (default `5m`)
+
+```bash
+sb overview -c prod --cache              # instant after first run
+sb overview -c prod --deep --cache --cache-ttl 1h
+```
 
 ## Queue Commands
 
@@ -495,6 +509,40 @@ Run MCP server over stdio:
 ```bash
 sb mcp
 ```
+
+## Changelog
+
+### v0.5.0 — Determinism, caching and quiet mode
+
+- Compare output (`sb q compare`, `sb t compare`) is stably ordered by name.
+- MCP server caches `Config`, credentials and `Manager` per context with a 5-minute TTL — config edits are picked up automatically.
+- New global `-q`/`--quiet` flag mutes progress UI.
+- New `sb overview --cache` (with `--cache-ttl`) persists the result to `~/.sb/cache/` for instant reruns.
+
+### v0.4.0 — Hot-path micro-optimizations
+
+- Filter loops cache `strings.ToLower(Name)` once per row instead of per filter (queue/topic/subscription).
+- Table renderer pre-resolves per-column `reflect.Value → string` formatters once, eliminating per-cell type switches and interface boxing — noticeably faster on 1k+ row tables.
+- JSON exports stream via `json.Encoder` directly to disk instead of marshalling a giant `[]byte` first — lower peak memory for large dumps.
+
+### v0.3.0 — Throughput overhaul
+
+- `sb q get` / `sb t get` fetch properties and runtime metrics in parallel (~2× faster).
+- `sb dlq view --all` and `sb dls view --all` stream via server-side pagination (`FromSequenceNumber`) — no more silent 250-message cap.
+- `sb dlq purge` / `sb dlq replay` (and DLS equivalents) use a prefetch pipeline: the receiver fetches the next batch while workers complete the current one.
+- `sb send --count N` coalesces repeats into `MessageBatch` for ~10× throughput on small messages; `sb send --path <dir>` dispatches files to an 8-worker pool.
+- `sb mcp` server caches `Config`, credentials and `Manager` per context — first call pays the AAD handshake, subsequent tool calls are near-instant.
+- `--all` on dead-letter view/export commands now truly streams unbounded (previously capped at 1000).
+
+### v0.2.0 — Pager and compare parallelization
+
+- `ListQueues` / `ListTopics` parallelize the properties and runtime pagers.
+- N-way compare runs per-context fetches concurrently.
+- `ListOptions.RuntimeOnly` fast path skips properties when only counts are needed.
+
+### v0.1.0
+
+- Made `sb overview` instant by default; added `--deep` flag for DLQ details.
 
 ## Troubleshooting
 
