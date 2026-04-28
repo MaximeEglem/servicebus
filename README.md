@@ -35,6 +35,41 @@ Optional cross-platform binaries:
 make build-all
 ```
 
+Check the current project version embedded in the binary:
+
+```bash
+./sb version
+./sb version --verbose
+```
+
+`make build` now discovers the version automatically from git tags.
+If the current commit is not tagged yet, the binary reports an untagged development version derived from git metadata.
+The default output prints the semantic version only; use `--verbose` to include full build metadata, commit, and build time.
+
+## Versioning
+
+Releases follow semantic versioning with git tags in the form `vMAJOR.MINOR.PATCH`.
+
+- `make release-patch`: backward-compatible bug fixes
+- `make release-minor`: backward-compatible features
+- `make release-major`: breaking changes
+
+Each release command:
+
+1. Requires a clean git working tree
+2. Finds the latest semantic version tag automatically
+3. Computes the next version
+4. Creates an annotated git tag
+5. Pushes the tag to `origin`
+
+Examples:
+
+```bash
+make release-patch
+make release-minor
+make release-major
+```
+
 ## Install (Optional)
 
 If sb is not found in PATH, install it to a PATH directory:
@@ -302,14 +337,20 @@ Purge dead-letter messages:
 sb dlq p -c dev -n orders
 sb dlq p -c dev -n orders -f TimeoutException
 sb dlq p -c dev -n orders --yes
+sb dlq p -c dev -n orders --all --yes --workers 16 --batch-size 500
+sb dlq p -c dev -n orders --all --yes --progress-every 10000 --checkpoint-file ./.sb-dlq-orders.ckpt
+sb dlq p -c dev -n orders --all --yes --checkpoint-file ./.sb-dlq-orders.ckpt --resume
 ```
 
 Replay dead-letter messages to main queue:
 
 ```bash
-sb dlq -c dev -n orders r
-sb dlq -c dev -n orders r --delay 5
-sb dlq -c dev -n orders r --ttl 7
+sb dlq r -c dev -n orders
+sb dlq r -c dev -n orders --delay 5
+sb dlq r -c dev -n orders --ttl 7
+sb dlq r -c dev -n orders --all --workers 16 --batch-size 500 --retry-max-retries 8
+sb dlq r -c dev -n orders --all --progress-every 10000 --checkpoint-file ./.sb-dlq-replay.ckpt
+sb dlq r -c dev -n orders --all --checkpoint-file ./.sb-dlq-replay.ckpt --resume
 ```
 
 Export dead-letter messages:
@@ -338,14 +379,31 @@ Purge dead-letter messages:
 ```bash
 sb dls p -c dev -t events -n email-sub
 sb dls p -c dev -t events -n email-sub --yes
+sb dls p -c dev -t events -n email-sub --all --yes --workers 16 --batch-size 500
+sb dls p -c dev -t events -n email-sub --all --yes --progress-every 10000 --checkpoint-file ./.sb-dls-purge.ckpt
+sb dls p -c dev -t events -n email-sub --all --yes --checkpoint-file ./.sb-dls-purge.ckpt --resume
 ```
 
 Replay dead-letter messages to topic:
 
 ```bash
-sb dls -c dev -t events -n email-sub r
-sb dls -c dev -t events -n email-sub r --delay 5 --ttl 7
+sb dls r -c dev -t events -n email-sub
+sb dls r -c dev -t events -n email-sub --delay 5 --ttl 7
+sb dls r -c dev -t events -n email-sub --all --workers 16 --batch-size 500
+sb dls r -c dev -t events -n email-sub --all --progress-every 10000 --checkpoint-file ./.sb-dls-replay.ckpt
+sb dls r -c dev -t events -n email-sub --all --checkpoint-file ./.sb-dls-replay.ckpt --resume
 ```
+
+High-volume options for dlq/dls purge/replay:
+
+- --workers: async worker count (default 8)
+- --batch-size: receive batch size (default 200)
+- --retry-max-retries: max retries for transient failures (default 5)
+- --retry-delay-ms: initial retry delay in milliseconds (default 200)
+- --retry-max-delay-ms: max retry delay in milliseconds (default 5000)
+- --progress-every: print progress every N successful operations
+- --checkpoint-file: write checkpoint for resume support
+- --resume: resume from checkpoint file
 
 Export dead-letter messages:
 
