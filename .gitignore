@@ -1,0 +1,13 @@
+# Build output
+sb
+dist/
+
+# IDE
+.idea/
+.vscode/
+
+# Agent context
+.claude/
+
+# OS
+.DS_Store
