@@ -19,6 +19,14 @@ type Highlighter interface {
 	HighlightColor(t ThresholdConfig) string // returns "red", "yellow", or ""
 }
 
+// TableColumner is implemented by row types that want to restrict which
+// fields are visible in table output. Return field names as they appear
+// in the struct (e.g. "Name", "ActiveMessages"). When not implemented,
+// all exported fields are shown.
+type TableColumner interface {
+	TableColumns() []string
+}
+
 type fieldMeta struct {
 	name  string
 	index int
@@ -36,12 +44,41 @@ func (p *Printer) printTable(data any) error {
 	}
 
 	// Collect exported fields with their struct indices
-	var fields []fieldMeta
+	var allFields []fieldMeta
 	for i := 0; i < elemType.NumField(); i++ {
 		f := elemType.Field(i)
 		if f.IsExported() {
-			fields = append(fields, fieldMeta{f.Name, i})
+			allFields = append(allFields, fieldMeta{f.Name, i})
 		}
+	}
+
+	// If the element type implements TableColumner, restrict to declared columns.
+	var fields []fieldMeta
+	if v.Len() > 0 {
+		elem0 := v.Index(0)
+		if elem0.Kind() == reflect.Ptr {
+			elem0 = elem0.Elem()
+		}
+		if tc, ok := elem0.Addr().Interface().(TableColumner); ok {
+			visible := make(map[string]int)
+			for idx, name := range tc.TableColumns() {
+				visible[name] = idx
+			}
+			ordered := make([]fieldMeta, len(tc.TableColumns()))
+			for _, fm := range allFields {
+				if idx, ok := visible[fm.name]; ok {
+					ordered[idx] = fm
+				}
+			}
+			for _, fm := range ordered {
+				if fm.name != "" {
+					fields = append(fields, fm)
+				}
+			}
+		}
+	}
+	if len(fields) == 0 {
+		fields = allFields
 	}
 
 	tbl := tablewriter.NewTable(p.out,
@@ -74,12 +111,9 @@ func (p *Printer) printTable(data any) error {
 
 	headerIface := make([]any, len(fields))
 	for j, fm := range fields {
-		h := humanizeHeader(fm.name)
-		if tty {
-			h = color.New(color.FgHiCyan, color.Bold).Sprint(h)
-		}
-		headerIface[j] = h
+		headerIface[j] = humanizeHeader(fm.name)
 	}
+	_ = tty // tty used for title accent only
 	tbl.Header(headerIface...)
 
 	for i := 0; i < v.Len(); i++ {

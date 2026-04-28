@@ -17,6 +17,10 @@ type QueueInfo struct {
 	DefaultMessageTTL  string    `json:"DefaultMessageTTL"   yaml:"default-message-ttl"`
 }
 
+func (q *QueueInfo) TableColumns() []string {
+	return []string{"Name", "ActiveMessages", "DeadLetterMessages", "SizeInMegabytes", "SizePercentage", "AccessedAt"}
+}
+
 type TopicInfo struct {
 	Name               string    `json:"Name"   yaml:"name"`
 	SizeInMegabytes    int64     `json:"SizeInMegabytes"   yaml:"size-in-megabytes"`
@@ -27,6 +31,10 @@ type TopicInfo struct {
 	UpdatedAt          time.Time `json:"UpdatedAt"   yaml:"updated-at"`
 	AccessedAt         time.Time `json:"AccessedAt"   yaml:"accessed-at"`
 	DefaultMessageTTL  string    `json:"DefaultMessageTTL"   yaml:"default-message-ttl"`
+}
+
+func (t *TopicInfo) TableColumns() []string {
+	return []string{"Name", "SizeInMegabytes", "SizePercentage", "SubscriptionCount", "AccessedAt"}
 }
 
 type SubscriptionInfo struct {
@@ -40,6 +48,10 @@ type SubscriptionInfo struct {
 	LockDuration       string    `json:"LockDuration"   yaml:"lock-duration"`
 	DefaultMessageTTL  string    `json:"DefaultMessageTTL"   yaml:"default-message-ttl"`
 	MaxDeliveryCount   int32     `json:"MaxDeliveryCount"   yaml:"max-delivery-count"`
+}
+
+func (s *SubscriptionInfo) TableColumns() []string {
+	return []string{"Name", "ActiveMessages", "DeadLetterMessages", "AccessedAt"}
 }
 
 type RuleInfo struct {
