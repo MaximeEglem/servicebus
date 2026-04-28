@@ -14,11 +14,16 @@ import (
 )
 
 func buildOverviewCmd() *cobra.Command {
-	return &cobra.Command{
+	var deep bool
+	cmd := &cobra.Command{
 		Use:   "overview",
 		Short: "Show namespace metrics: queue, topic and subscription counts",
-		RunE:  runOverview,
+		RunE: func(c *cobra.Command, args []string) error {
+			return runOverview(c, args, deep)
+		},
 	}
+	cmd.Flags().BoolVar(&deep, "deep", false, "Fetch subscription DLQ details (slower)")
+	return cmd
 }
 
 type namespaceMetrics struct {
@@ -27,11 +32,13 @@ type namespaceMetrics struct {
 	TotalDLQMessages    int64
 	Topics              int
 	Subscriptions       int
+	// Deep mode only:
 	SubsWithDLQ         int
 	TotalSubDLQMessages int64
+	DeepMode            bool
 }
 
-func runOverview(_ *cobra.Command, _ []string) error {
+func runOverview(_ *cobra.Command, _ []string, deep bool) error {
 	mgr, cfg, err := newManager()
 	if err != nil {
 		return err
@@ -40,10 +47,9 @@ func runOverview(_ *cobra.Command, _ []string) error {
 
 	ctx := context.Background()
 
-	spin := newSpinner("Loading namespace metrics")
+	spin := newSpinner("Loading namespace metrics…")
 	spin.start()
 
-	// Fetch queues and topics in parallel; subscriptions need topic list first.
 	type queueResult struct {
 		queues []management.QueueInfo
 		err    error
@@ -76,51 +82,10 @@ func runOverview(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("listing topics: %w", tr.err)
 	}
 
-	spin.update(fmt.Sprintf("Loading subscriptions for %d topics…", len(tr.topics)))
-
-	// Fetch subscriptions for all topics in parallel.
-	type subResult struct {
-		subs []management.SubscriptionInfo
-		err  error
-	}
-	total := len(tr.topics)
-	subCh := make(chan subResult, total)
-	var wg sync.WaitGroup
-	var doneMu sync.Mutex
-	doneCount := 0
-	for _, t := range tr.topics {
-		wg.Add(1)
-		go func(topicName string) {
-			defer wg.Done()
-			subs, err := mgr.ListSubscriptions(ctx, topicName, management.ListOptions{})
-			subCh <- subResult{subs, err}
-			doneMu.Lock()
-			doneCount++
-			d := doneCount
-			doneMu.Unlock()
-			spin.update(fmt.Sprintf("Loading subscriptions… %d/%d topics", d, total))
-		}(t.Name)
-	}
-	go func() {
-		wg.Wait()
-		close(subCh)
-	}()
-
-	var allSubs []management.SubscriptionInfo
-	for sr := range subCh {
-		if sr.err != nil {
-			continue // best-effort; count what we can
-		}
-		allSubs = append(allSubs, sr.subs...)
-	}
-
-	spin.stop()
-
-	// Compute metrics.
 	m := namespaceMetrics{
-		Queues:        len(qr.queues),
-		Topics:        len(tr.topics),
-		Subscriptions: len(allSubs),
+		Queues:   len(qr.queues),
+		Topics:   len(tr.topics),
+		DeepMode: deep,
 	}
 	for _, q := range qr.queues {
 		if q.DeadLetterMessages > 0 {
@@ -128,11 +93,63 @@ func runOverview(_ *cobra.Command, _ []string) error {
 			m.TotalDLQMessages += q.DeadLetterMessages
 		}
 	}
-	for _, s := range allSubs {
-		if s.DeadLetterMessages > 0 {
-			m.SubsWithDLQ++
-			m.TotalSubDLQMessages += s.DeadLetterMessages
+
+	if !deep {
+		// Fast path: SubscriptionCount is already in TopicRuntimeProperties — no extra HTTP calls.
+		var total int32
+		for _, t := range tr.topics {
+			total += t.SubscriptionCount
 		}
+		m.Subscriptions = int(total)
+		spin.stop()
+	} else {
+		// Deep path: fetch all subscriptions with a semaphore to avoid throttling Azure.
+		const concurrency = 20
+		sem := make(chan struct{}, concurrency)
+		total := len(tr.topics)
+
+		type subResult struct {
+			subs []management.SubscriptionInfo
+			err  error
+		}
+		subCh := make(chan subResult, total)
+		var wg sync.WaitGroup
+		var doneMu sync.Mutex
+		doneCount := 0
+
+		for _, t := range tr.topics {
+			wg.Add(1)
+			go func(topicName string) {
+				defer wg.Done()
+				sem <- struct{}{}
+				subs, err := mgr.ListSubscriptions(ctx, topicName, management.ListOptions{})
+				<-sem
+				subCh <- subResult{subs, err}
+				doneMu.Lock()
+				doneCount++
+				d := doneCount
+				doneMu.Unlock()
+				spin.update(fmt.Sprintf("Loading subscriptions… %d/%d topics", d, total))
+			}(t.Name)
+		}
+		go func() {
+			wg.Wait()
+			close(subCh)
+		}()
+
+		for sr := range subCh {
+			if sr.err != nil {
+				continue
+			}
+			m.Subscriptions += len(sr.subs)
+			for _, s := range sr.subs {
+				if s.DeadLetterMessages > 0 {
+					m.SubsWithDLQ++
+					m.TotalSubDLQMessages += s.DeadLetterMessages
+				}
+			}
+		}
+		spin.stop()
 	}
 
 	printOverview(m)
@@ -199,14 +216,18 @@ func printOverview(m namespaceMetrics) {
 	fmt.Printf("  %-28s  %s\n", label("Topics"), hi(fmt.Sprintf("%d", m.Topics)))
 	fmt.Println()
 	fmt.Printf("  %-28s  %s\n", label("Subscriptions"), hi(fmt.Sprintf("%d", m.Subscriptions)))
-	if m.SubsWithDLQ > 0 {
-		fmt.Printf("  %-28s  %s  (%s total DLQ messages)\n",
-			label("  └─ with dead letters"),
-			warn(fmt.Sprintf("%d", m.SubsWithDLQ)),
-			bad(fmt.Sprintf("%d", m.TotalSubDLQMessages)),
-		)
+	if m.DeepMode {
+		if m.SubsWithDLQ > 0 {
+			fmt.Printf("  %-28s  %s  (%s total DLQ messages)\n",
+				label("  └─ with dead letters"),
+				warn(fmt.Sprintf("%d", m.SubsWithDLQ)),
+				bad(fmt.Sprintf("%d", m.TotalSubDLQMessages)),
+			)
+		} else {
+			fmt.Printf("  %-28s  %s\n", label("  └─ with dead letters"), ok("0"))
+		}
 	} else {
-		fmt.Printf("  %-28s  %s\n", label("  └─ with dead letters"), ok("0"))
+		fmt.Printf("  %-28s  %s\n", label("  └─ tip"), fmt.Sprintf("run with %s for DLQ details", hi("--deep")))
 	}
 	fmt.Println()
 }
