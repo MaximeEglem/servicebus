@@ -59,7 +59,7 @@ func runDLQList(cmd *cobra.Command, _ []string) error {
 	}
 
 	// List queues that have dead letter messages
-	queues, err := mgr.ListQueues(ctx, management.ListOptions{})
+	queues, err := mgr.ListQueues(ctx, management.ListOptions{RuntimeOnly: true})
 	if err != nil {
 		return err
 	}

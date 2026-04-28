@@ -2,6 +2,7 @@ package management
 
 import (
 	"context"
+	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/messaging/azservicebus/admin"
 	"servicebus/pkg/auth"
@@ -27,38 +28,74 @@ func NewManager(cred *auth.Credentials) (Manager, error) {
 }
 
 func (m *azureManager) ListQueues(ctx context.Context, opts ListOptions) ([]QueueInfo, error) {
-	propMap := map[string]*admin.QueueProperties{}
-	pager := m.client.NewListQueuesPager(nil)
-	for pager.More() {
-		page, err := pager.NextPage(ctx)
-		if err != nil {
-			return nil, err
+	// Fetch runtime always; props only when caller needs static fields.
+	var (
+		propMap map[string]*admin.QueueProperties
+		rtMap   map[string]*admin.QueueRuntimeProperties
+		propErr error
+		rtErr   error
+		wg      sync.WaitGroup
+	)
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		rtMap = map[string]*admin.QueueRuntimeProperties{}
+		rtPager := m.client.NewListQueuesRuntimePropertiesPager(nil)
+		for rtPager.More() {
+			page, err := rtPager.NextPage(ctx)
+			if err != nil {
+				rtErr = err
+				return
+			}
+			for _, q := range page.QueueRuntimeProperties {
+				name := q.QueueName
+				rp := q.QueueRuntimeProperties
+				rtMap[name] = &rp
+			}
 		}
-		for _, q := range page.Queues {
-			name := q.QueueName
-			props := q.QueueProperties
-			propMap[name] = &props
+	}()
+
+	if !opts.RuntimeOnly {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			propMap = map[string]*admin.QueueProperties{}
+			pager := m.client.NewListQueuesPager(nil)
+			for pager.More() {
+				page, err := pager.NextPage(ctx)
+				if err != nil {
+					propErr = err
+					return
+				}
+				for _, q := range page.Queues {
+					name := q.QueueName
+					props := q.QueueProperties
+					propMap[name] = &props
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	if rtErr != nil {
+		return nil, rtErr
+	}
+	if propErr != nil {
+		return nil, propErr
+	}
+
+	// When runtime-only, iterate runtime map (it has every queue).
+	names := propMap
+	if opts.RuntimeOnly {
+		names = make(map[string]*admin.QueueProperties, len(rtMap))
+		for n := range rtMap {
+			names[n] = nil
 		}
 	}
 
-	rtMap := map[string]*admin.QueueRuntimeProperties{}
-	rtPager := m.client.NewListQueuesRuntimePropertiesPager(nil)
-	for rtPager.More() {
-		page, err := rtPager.NextPage(ctx)
-		if err != nil {
-			return nil, err
-		}
-		for _, q := range page.QueueRuntimeProperties {
-			name := q.QueueName
-			rp := q.QueueRuntimeProperties
-			rtMap[name] = &rp
-		}
-	}
-
-	var result []QueueInfo
-	for name, props := range propMap {
-		info := queueInfoFromProps(name, props, rtMap[name])
-		result = append(result, info)
+	result := make([]QueueInfo, 0, len(names))
+	for name, props := range names {
+		result = append(result, queueInfoFromProps(name, props, rtMap[name]))
 	}
 	return result, nil
 }
@@ -123,38 +160,72 @@ func queueInfoFromProps(name string, props *admin.QueueProperties, rt *admin.Que
 }
 
 func (m *azureManager) ListTopics(ctx context.Context, opts ListOptions) ([]TopicInfo, error) {
-	propMap := map[string]*admin.TopicProperties{}
-	pager := m.client.NewListTopicsPager(nil)
-	for pager.More() {
-		page, err := pager.NextPage(ctx)
-		if err != nil {
-			return nil, err
+	var (
+		propMap map[string]*admin.TopicProperties
+		rtMap   map[string]*admin.TopicRuntimeProperties
+		propErr error
+		rtErr   error
+		wg      sync.WaitGroup
+	)
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		rtMap = map[string]*admin.TopicRuntimeProperties{}
+		rtPager := m.client.NewListTopicsRuntimePropertiesPager(nil)
+		for rtPager.More() {
+			page, err := rtPager.NextPage(ctx)
+			if err != nil {
+				rtErr = err
+				return
+			}
+			for _, t := range page.TopicRuntimeProperties {
+				name := t.TopicName
+				rp := t.TopicRuntimeProperties
+				rtMap[name] = &rp
+			}
 		}
-		for _, t := range page.Topics {
-			name := t.TopicName
-			props := t.TopicProperties
-			propMap[name] = &props
+	}()
+
+	if !opts.RuntimeOnly {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			propMap = map[string]*admin.TopicProperties{}
+			pager := m.client.NewListTopicsPager(nil)
+			for pager.More() {
+				page, err := pager.NextPage(ctx)
+				if err != nil {
+					propErr = err
+					return
+				}
+				for _, t := range page.Topics {
+					name := t.TopicName
+					props := t.TopicProperties
+					propMap[name] = &props
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	if rtErr != nil {
+		return nil, rtErr
+	}
+	if propErr != nil {
+		return nil, propErr
+	}
+
+	names := propMap
+	if opts.RuntimeOnly {
+		names = make(map[string]*admin.TopicProperties, len(rtMap))
+		for n := range rtMap {
+			names[n] = nil
 		}
 	}
 
-	rtMap := map[string]*admin.TopicRuntimeProperties{}
-	rtPager := m.client.NewListTopicsRuntimePropertiesPager(nil)
-	for rtPager.More() {
-		page, err := rtPager.NextPage(ctx)
-		if err != nil {
-			return nil, err
-		}
-		for _, t := range page.TopicRuntimeProperties {
-			name := t.TopicName
-			rp := t.TopicRuntimeProperties
-			rtMap[name] = &rp
-		}
-	}
-
-	var result []TopicInfo
-	for name, props := range propMap {
-		info := topicInfoFromProps(name, props, rtMap[name])
-		result = append(result, info)
+	result := make([]TopicInfo, 0, len(names))
+	for name, props := range names {
+		result = append(result, topicInfoFromProps(name, props, rtMap[name]))
 	}
 	return result, nil
 }

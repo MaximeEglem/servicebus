@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"servicebus/internal/config"
@@ -152,38 +153,59 @@ func buildQueueCompareCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			contextQueues := map[string][]management.QueueInfo{}
-			for ctxName, ctxCfg := range cfg.Contexts {
-				cred, err := auth.Resolve(auth.Options{
-					ConnectionString: ctxCfg.ConnectionString,
-					Namespace:        ctxCfg.Namespace,
-					Config:           cfg,
-				})
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "skipping %s: %v\n", ctxName, err)
-					continue
-				}
-				mgr, err := management.NewManager(cred)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "skipping %s: %v\n", ctxName, err)
-					continue
-				}
-				filters, _ := parseFilters(gf.filters)
-				queues, err := mgr.ListQueues(context.Background(), management.ListOptions{})
-				if err == nil {
-					queues = management.ApplyQueueFilters(queues, filters)
-				}
-				if gf.name != "" {
-					var filtered []management.QueueInfo
-					for _, q := range queues {
-						if q.Name == gf.name {
-							filtered = append(filtered, q)
-						}
-					}
-					queues = filtered
-				}
-				contextQueues[ctxName] = queues
+			filters, _ := parseFilters(gf.filters)
+
+			type ctxResult struct {
+				name   string
+				queues []management.QueueInfo
 			}
+			resCh := make(chan ctxResult, len(cfg.Contexts))
+			var wg sync.WaitGroup
+
+			for ctxName, ctxCfg := range cfg.Contexts {
+				wg.Add(1)
+				go func(ctxName string, ctxCfg config.Context) {
+					defer wg.Done()
+					cred, err := auth.Resolve(auth.Options{
+						ConnectionString: ctxCfg.ConnectionString,
+						Namespace:        ctxCfg.Namespace,
+						Config:           cfg,
+					})
+					if err != nil {
+						fmt.Fprintf(os.Stderr, "skipping %s: %v\n", ctxName, err)
+						return
+					}
+					mgr, err := management.NewManager(cred)
+					if err != nil {
+						fmt.Fprintf(os.Stderr, "skipping %s: %v\n", ctxName, err)
+						return
+					}
+					queues, err := mgr.ListQueues(context.Background(), management.ListOptions{RuntimeOnly: true})
+					if err != nil {
+						fmt.Fprintf(os.Stderr, "skipping %s: %v\n", ctxName, err)
+						return
+					}
+					queues = management.ApplyQueueFilters(queues, filters)
+					if gf.name != "" {
+						var filtered []management.QueueInfo
+						for _, q := range queues {
+							if q.Name == gf.name {
+								filtered = append(filtered, q)
+							}
+						}
+						queues = filtered
+					}
+					resCh <- ctxResult{ctxName, queues}
+				}(ctxName, ctxCfg)
+			}
+			wg.Wait()
+			close(resCh)
+
+			contextQueues := map[string][]management.QueueInfo{}
+			for r := range resCh {
+				contextQueues[r.name] = r.queues
+			}
+
 			results := management.CompareQueues(contextQueues)
 			if issues {
 				var filtered []management.QueueCompareResult

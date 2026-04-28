@@ -101,7 +101,10 @@ func (p *Printer) printTable(data any) error {
 
 	tty := isTTYWriter(p.out)
 	showBars := isBarsEnabled()
-	numericMax := computeNumericMaxByField(v, fields)
+	var numericMax map[int]float64
+	if showBars {
+		numericMax = computeNumericMaxByField(v, fields)
+	}
 	if tty {
 		accent := color.New(color.FgHiCyan, color.Bold).SprintFunc()
 		fmt.Fprintf(p.out, "%s (%d)\n\n", accent(humanizeTypeName(elemType.Name())), v.Len())

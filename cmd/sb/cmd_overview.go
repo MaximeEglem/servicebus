@@ -27,11 +27,11 @@ func buildOverviewCmd() *cobra.Command {
 }
 
 type namespaceMetrics struct {
-	Queues              int
-	QueuesWithDLQ       int
-	TotalDLQMessages    int64
-	Topics              int
-	Subscriptions       int
+	Queues           int
+	QueuesWithDLQ    int
+	TotalDLQMessages int64
+	Topics           int
+	Subscriptions    int
 	// Deep mode only:
 	SubsWithDLQ         int
 	TotalSubDLQMessages int64
@@ -63,11 +63,11 @@ func runOverview(_ *cobra.Command, _ []string, deep bool) error {
 	tCh := make(chan topicResult, 1)
 
 	go func() {
-		q, err := mgr.ListQueues(ctx, management.ListOptions{})
+		q, err := mgr.ListQueues(ctx, management.ListOptions{RuntimeOnly: true})
 		qCh <- queueResult{q, err}
 	}()
 	go func() {
-		t, err := mgr.ListTopics(ctx, management.ListOptions{})
+		t, err := mgr.ListTopics(ctx, management.ListOptions{RuntimeOnly: true})
 		tCh <- topicResult{t, err}
 	}()
 

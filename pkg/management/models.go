@@ -62,7 +62,7 @@ type RuleInfo struct {
 type FilterKind int
 
 const (
-	FilterKindKeyword       FilterKind = iota
+	FilterKindKeyword FilterKind = iota
 	FilterKindNumericField
 	FilterKindDateField
 	FilterKindErrorField
@@ -88,6 +88,9 @@ type ListOptions struct {
 	SortDir string
 	Max     int
 	All     bool
+	// RuntimeOnly skips the static-properties fetch when the caller only
+	// needs counts/sizes/dates. Halves the number of HTTP round-trips.
+	RuntimeOnly bool
 }
 
 type CreateQueueOptions struct {
