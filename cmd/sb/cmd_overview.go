@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"time"
+
+	"servicebus/pkg/management"
 
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
-	"servicebus/pkg/management"
 )
 
 func buildOverviewCmd() *cobra.Command {
@@ -38,6 +40,9 @@ func runOverview(_ *cobra.Command, _ []string) error {
 
 	ctx := context.Background()
 
+	spin := newSpinner("Loading namespace metrics")
+	spin.start()
+
 	// Fetch queues and topics in parallel; subscriptions need topic list first.
 	type queueResult struct {
 		queues []management.QueueInfo
@@ -62,26 +67,38 @@ func runOverview(_ *cobra.Command, _ []string) error {
 
 	qr := <-qCh
 	if qr.err != nil {
+		spin.stop()
 		return fmt.Errorf("listing queues: %w", qr.err)
 	}
 	tr := <-tCh
 	if tr.err != nil {
+		spin.stop()
 		return fmt.Errorf("listing topics: %w", tr.err)
 	}
+
+	spin.update(fmt.Sprintf("Loading subscriptions for %d topics…", len(tr.topics)))
 
 	// Fetch subscriptions for all topics in parallel.
 	type subResult struct {
 		subs []management.SubscriptionInfo
 		err  error
 	}
-	subCh := make(chan subResult, len(tr.topics))
+	total := len(tr.topics)
+	subCh := make(chan subResult, total)
 	var wg sync.WaitGroup
+	var doneMu sync.Mutex
+	doneCount := 0
 	for _, t := range tr.topics {
 		wg.Add(1)
 		go func(topicName string) {
 			defer wg.Done()
 			subs, err := mgr.ListSubscriptions(ctx, topicName, management.ListOptions{})
 			subCh <- subResult{subs, err}
+			doneMu.Lock()
+			doneCount++
+			d := doneCount
+			doneMu.Unlock()
+			spin.update(fmt.Sprintf("Loading subscriptions… %d/%d topics", d, total))
 		}(t.Name)
 	}
 	go func() {
@@ -96,6 +113,8 @@ func runOverview(_ *cobra.Command, _ []string) error {
 		}
 		allSubs = append(allSubs, sr.subs...)
 	}
+
+	spin.stop()
 
 	// Compute metrics.
 	m := namespaceMetrics{
@@ -190,4 +209,58 @@ func printOverview(m namespaceMetrics) {
 		fmt.Printf("  %-28s  %s\n", label("  └─ with dead letters"), ok("0"))
 	}
 	fmt.Println()
+}
+
+// spinner — simple TTY progress indicator written to stderr.
+type spinner struct {
+	mu      sync.Mutex
+	msg     string
+	done    chan struct{}
+	enabled bool
+}
+
+func newSpinner(msg string) *spinner {
+	enabled := false
+	if stat, err := os.Stderr.Stat(); err == nil {
+		enabled = (stat.Mode() & os.ModeCharDevice) != 0
+	}
+	return &spinner{msg: msg, done: make(chan struct{}), enabled: enabled}
+}
+
+func (s *spinner) update(msg string) {
+	s.mu.Lock()
+	s.msg = msg
+	s.mu.Unlock()
+}
+
+func (s *spinner) start() {
+	if !s.enabled {
+		return
+	}
+	frames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+	go func() {
+		i := 0
+		for {
+			select {
+			case <-s.done:
+				fmt.Fprint(os.Stderr, "\r\033[K") // clear line
+				return
+			default:
+				s.mu.Lock()
+				msg := s.msg
+				s.mu.Unlock()
+				fmt.Fprintf(os.Stderr, "\r%s %s", frames[i%len(frames)], msg)
+				i++
+				time.Sleep(80 * time.Millisecond)
+			}
+		}
+	}()
+}
+
+func (s *spinner) stop() {
+	if !s.enabled {
+		return
+	}
+	close(s.done)
+	time.Sleep(90 * time.Millisecond) // let goroutine clear the line
 }
