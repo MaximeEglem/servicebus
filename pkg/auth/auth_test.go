@@ -49,6 +49,41 @@ func TestResolveNamedContext(t *testing.T) {
 	}
 }
 
+func TestResolveCurrentContextFallback(t *testing.T) {
+	os.Unsetenv("AZURE_SERVICEBUS_CONNECTION_STRING")
+	t.Cleanup(func() { os.Unsetenv("AZURE_SERVICEBUS_CONNECTION_STRING") })
+	cfg := &config.Config{
+		CurrentContext: "staging",
+		Contexts: map[string]config.Context{
+			"staging": {ConnectionString: "Endpoint=sb://staging.servicebus.windows.net/;SharedAccessKeyName=k;SharedAccessKey=dmFsdWU="},
+		},
+	}
+	cred, err := auth.Resolve(auth.Options{Config: cfg})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if cred.ConnectionString == "" {
+		t.Error("expected ConnectionString from current context")
+	}
+}
+
+func TestResolveNamespaceContainingConnectionString(t *testing.T) {
+	os.Unsetenv("AZURE_SERVICEBUS_CONNECTION_STRING")
+	t.Cleanup(func() { os.Unsetenv("AZURE_SERVICEBUS_CONNECTION_STRING") })
+	cfg := &config.Config{
+		Contexts: map[string]config.Context{
+			"uat": {Namespace: "Endpoint=sb://uat.servicebus.windows.net/;SharedAccessKeyName=k;SharedAccessKey=dmFsdWU="},
+		},
+	}
+	cred, err := auth.Resolve(auth.Options{ContextName: "uat", Config: cfg})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if cred.ConnectionString == "" {
+		t.Error("expected connection string fallback from namespace field")
+	}
+}
+
 func TestResolveUnknownContextErrors(t *testing.T) {
 	os.Unsetenv("AZURE_SERVICEBUS_CONNECTION_STRING")
 	t.Cleanup(func() { os.Unsetenv("AZURE_SERVICEBUS_CONNECTION_STRING") })
