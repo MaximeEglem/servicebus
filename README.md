@@ -70,6 +70,52 @@ make release-minor
 make release-major
 ```
 
+When a `v*` tag is pushed, GitHub Actions now automatically builds release assets for:
+
+- macOS amd64
+- macOS arm64
+- Linux amd64
+- Linux arm64
+- Windows amd64
+
+It also publishes `checksums.txt` in the release.
+
+## Install From A Release Tag
+
+1. Open GitHub Releases and copy the latest tag asset URL for your OS/architecture.
+2. Download, extract, and move `sb` into your `PATH`.
+3. Verify with `sb version`.
+
+Example for macOS arm64:
+
+```bash
+TAG=v0.0.1
+curl -L -o sb.tar.gz "https://github.com/MaximeEglem/servicebus/releases/download/${TAG}/sb_${TAG}_darwin_arm64.tar.gz"
+tar -xzf sb.tar.gz
+chmod +x sb
+sudo mv sb /usr/local/bin/sb
+sb version
+```
+
+Example for Linux amd64:
+
+```bash
+TAG=v0.0.1
+curl -L -o sb.tar.gz "https://github.com/MaximeEglem/servicebus/releases/download/${TAG}/sb_${TAG}_linux_amd64.tar.gz"
+tar -xzf sb.tar.gz
+chmod +x sb
+sudo mv sb /usr/local/bin/sb
+sb version
+```
+
+Optional checksum verification:
+
+```bash
+TAG=v0.0.1
+curl -L -o checksums.txt "https://github.com/MaximeEglem/servicebus/releases/download/${TAG}/checksums.txt"
+shasum -a 256 -c checksums.txt
+```
+
 ## Install (Optional)
 
 If sb is not found in PATH, install it to a PATH directory:
