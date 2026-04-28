@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/spf13/cobra"
 	"servicebus/internal/config"
 	"servicebus/internal/format"
+
+	"github.com/spf13/cobra"
 )
 
 type globalFlags struct {

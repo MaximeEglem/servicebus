@@ -5,9 +5,10 @@ import (
 	"os"
 	"strings"
 
+	"servicebus/internal/config"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"servicebus/internal/config"
 )
 
 type Options struct {
