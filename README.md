@@ -46,6 +46,16 @@ Check the current project version embedded in the binary:
 If the current commit is not tagged yet, the binary reports an untagged development version derived from git metadata.
 The default output prints the semantic version only; use `--verbose` to include full build metadata, commit, and build time.
 
+Table display options:
+
+- `SB_TABLE_BARS=true` enables mini metric bars for numeric columns in table output.
+
+Example:
+
+```bash
+SB_TABLE_BARS=true sb q -c dev -m 10
+```
+
 ## Versioning
 
 Releases follow semantic versioning with git tags in the form `vMAJOR.MINOR.PATCH`.

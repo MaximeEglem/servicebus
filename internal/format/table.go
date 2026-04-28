@@ -2,8 +2,12 @@ package format
 
 import (
 	"fmt"
+	"os"
 	"reflect"
+	"strconv"
+	"strings"
 	"time"
+	"unicode"
 
 	"github.com/fatih/color"
 	"github.com/olekukonko/tablewriter"
@@ -13,6 +17,11 @@ import (
 // Highlighter is implemented by row types that want ANSI threshold coloring.
 type Highlighter interface {
 	HighlightColor(t ThresholdConfig) string // returns "red", "yellow", or ""
+}
+
+type fieldMeta struct {
+	name  string
+	index int
 }
 
 func (p *Printer) printTable(data any) error {
@@ -27,10 +36,6 @@ func (p *Printer) printTable(data any) error {
 	}
 
 	// Collect exported fields with their struct indices
-	type fieldMeta struct {
-		name  string
-		index int
-	}
 	var fields []fieldMeta
 	for i := 0; i < elemType.NumField(); i++ {
 		f := elemType.Field(i)
@@ -43,17 +48,37 @@ func (p *Printer) printTable(data any) error {
 		tablewriter.WithAlignment(tw.MakeAlign(len(fields), tw.AlignLeft)),
 		tablewriter.WithRendition(tw.Rendition{
 			Borders: tw.Border{
-				Left:   tw.Off,
-				Right:  tw.Off,
-				Top:    tw.Off,
-				Bottom: tw.Off,
+				Left:   tw.On,
+				Right:  tw.On,
+				Top:    tw.On,
+				Bottom: tw.On,
+			},
+			Settings: tw.Settings{
+				Separators: tw.Separators{
+					BetweenColumns: tw.On,
+					BetweenRows:    tw.On,
+				},
 			},
 		}),
 	)
 
+	tty := isTTYWriter(p.out)
+	showBars := isBarsEnabled()
+	numericMax := computeNumericMaxByField(v, fields)
+	if tty {
+		accent := color.New(color.FgHiCyan, color.Bold).SprintFunc()
+		fmt.Fprintf(p.out, "%s (%d)\n\n", accent(humanizeTypeName(elemType.Name())), v.Len())
+	} else {
+		fmt.Fprintf(p.out, "%s (%d)\n\n", humanizeTypeName(elemType.Name()), v.Len())
+	}
+
 	headerIface := make([]any, len(fields))
 	for j, fm := range fields {
-		headerIface[j] = fm.name
+		h := humanizeHeader(fm.name)
+		if tty {
+			h = color.New(color.FgHiCyan, color.Bold).Sprint(h)
+		}
+		headerIface[j] = h
 	}
 	tbl.Header(headerIface...)
 
@@ -76,7 +101,15 @@ func (p *Printer) printTable(data any) error {
 
 		row := make([]any, len(fields))
 		for j, fm := range fields {
-			cell := formatTableCell(elem.Field(fm.index).Interface())
+			fv := elem.Field(fm.index)
+			cell := formatTableCell(fv.Interface())
+			if showBars {
+				if max, ok := numericMax[fm.index]; ok && max > 0 {
+					if num, ok := numericValueFromReflect(fv); ok {
+						cell = formatCellWithBar(cell, num, max)
+					}
+				}
+			}
 			if sprint != nil {
 				cell = sprint(cell)
 			}
@@ -87,6 +120,121 @@ func (p *Printer) printTable(data any) error {
 		}
 	}
 	return tbl.Render()
+}
+
+func isTTYWriter(out any) bool {
+	f, ok := out.(*os.File)
+	if !ok {
+		return false
+	}
+	st, err := f.Stat()
+	if err != nil {
+		return false
+	}
+	return (st.Mode() & os.ModeCharDevice) != 0
+}
+
+func humanizeTypeName(name string) string {
+	if name == "" {
+		return "Results"
+	}
+	return humanizeHeader(name)
+}
+
+func humanizeHeader(s string) string {
+	if s == "" {
+		return s
+	}
+	var b strings.Builder
+	var prev rune
+	for i, r := range s {
+		if i > 0 {
+			if unicode.IsUpper(r) && (unicode.IsLower(prev) || unicode.IsDigit(prev)) {
+				b.WriteRune(' ')
+			}
+			if unicode.IsDigit(r) && unicode.IsLetter(prev) {
+				b.WriteRune(' ')
+			}
+		}
+		b.WriteRune(r)
+		prev = r
+	}
+	words := strings.Fields(b.String())
+	for i, w := range words {
+		if len(w) == 0 {
+			continue
+		}
+		words[i] = strings.ToUpper(w[:1]) + w[1:]
+	}
+	return strings.Join(words, " ")
+}
+
+func isBarsEnabled() bool {
+	v := strings.TrimSpace(strings.ToLower(os.Getenv("SB_TABLE_BARS")))
+	if v == "" {
+		return false
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return v == "on" || v == "yes" || v == "y" || v == "1"
+	}
+	return b
+}
+
+func computeNumericMaxByField(v reflect.Value, fields []fieldMeta) map[int]float64 {
+	maxByField := make(map[int]float64)
+	for i := 0; i < v.Len(); i++ {
+		elem := v.Index(i)
+		if elem.Kind() == reflect.Ptr {
+			elem = elem.Elem()
+		}
+		for _, fm := range fields {
+			if num, ok := numericValueFromReflect(elem.Field(fm.index)); ok {
+				if num > maxByField[fm.index] {
+					maxByField[fm.index] = num
+				}
+			}
+		}
+	}
+	return maxByField
+}
+
+func numericValueFromReflect(v reflect.Value) (float64, bool) {
+	if !v.IsValid() {
+		return 0, false
+	}
+	if v.Kind() == reflect.Ptr {
+		if v.IsNil() {
+			return 0, false
+		}
+		v = v.Elem()
+	}
+	switch v.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return float64(v.Int()), true
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return float64(v.Uint()), true
+	case reflect.Float32, reflect.Float64:
+		return v.Float(), true
+	default:
+		return 0, false
+	}
+}
+
+func formatCellWithBar(base string, value, max float64) string {
+	if max <= 0 || value < 0 {
+		return base
+	}
+	const barWidth = 12
+	filled := int((value / max) * barWidth)
+	if value > 0 && filled == 0 {
+		filled = 1
+	}
+	if filled > barWidth {
+		filled = barWidth
+	}
+	bar := strings.Repeat("#", filled) + strings.Repeat("-", barWidth-filled)
+	return fmt.Sprintf("%s [%s]", base, bar)
 }
 
 func formatTableCell(value any) string {

@@ -76,6 +76,48 @@ func TestTableOutputFormatsTimeShort(t *testing.T) {
 	}
 }
 
+func TestTableOutputBarsEnabled(t *testing.T) {
+	t.Setenv("SB_TABLE_BARS", "true")
+
+	type rowWithMetrics struct {
+		Name  string
+		Count int
+	}
+
+	var buf bytes.Buffer
+	p := format.NewPrinter(format.Table, &buf, format.ThresholdConfig{})
+	data := []rowWithMetrics{{Name: "q1", Count: 5}, {Name: "q2", Count: 10}}
+
+	if err := p.Print(data); err != nil {
+		t.Fatalf("Print: %v", err)
+	}
+	out := buf.String()
+	if !bytes.Contains(buf.Bytes(), []byte("[######")) {
+		t.Fatalf("expected bar rendering in table output when SB_TABLE_BARS=true: %s", out)
+	}
+}
+
+func TestTableOutputBarsDisabledByDefault(t *testing.T) {
+	t.Setenv("SB_TABLE_BARS", "")
+
+	type rowWithMetrics struct {
+		Name  string
+		Count int
+	}
+
+	var buf bytes.Buffer
+	p := format.NewPrinter(format.Table, &buf, format.ThresholdConfig{})
+	data := []rowWithMetrics{{Name: "q1", Count: 5}}
+
+	if err := p.Print(data); err != nil {
+		t.Fatalf("Print: %v", err)
+	}
+	out := buf.String()
+	if bytes.Contains(buf.Bytes(), []byte("[#")) {
+		t.Fatalf("did not expect bar rendering by default: %s", out)
+	}
+}
+
 func TestParseFormat(t *testing.T) {
 	for _, tc := range []struct {
 		input string
