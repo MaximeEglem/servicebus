@@ -529,6 +529,12 @@ sb mcp
 
 ## Changelog
 
+### v0.7.0 — Live monitoring
+
+- New `sb tail` command — follows new messages on a queue, subscription, or DLQ via the read-only `PeekMessages` API. Supports `--since`, `--from-seq`, `--dlq`, `--interval`, `--batch`, `--body-only`. Safe to run against production: never locks or consumes messages.
+- New `sb watch -- <cmd>` command — re-runs any sb subcommand at intervals (default 5s) with line-level diff coloring (added=green, removed=red, unchanged=dim). Combine with `overview`, `dlq`, `dlq stats`, `q -s ...` for live dashboards.
+- New `messaging.Peeker` API for entity-agnostic peek operations.
+
 ### v0.6.0 — DLQ aggregation
 
 - New `sb dlq stats` and `sb dls stats` subcommands group dead-letter messages by `--by reason` (default, a.k.a. ErrorType), `--by description`, or `--by body-hash` (for duplicate-payload discovery).

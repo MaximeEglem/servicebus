@@ -69,6 +69,8 @@ func buildRoot() *cobra.Command {
 		buildSchemaCmd(),
 		buildDocsCmd(),
 		buildMCPCmd(),
+		buildTailCmd(),
+		buildWatchCmd(),
 	)
 
 	return root
