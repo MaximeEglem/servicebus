@@ -6,8 +6,9 @@ import (
 	"os/exec"
 	"runtime"
 
-	"github.com/spf13/cobra"
 	"servicebus/internal/config"
+
+	"github.com/spf13/cobra"
 )
 
 func buildConfigCmd() *cobra.Command {

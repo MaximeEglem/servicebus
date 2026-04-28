@@ -7,11 +7,12 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/spf13/cobra"
 	"servicebus/internal/config"
 	"servicebus/internal/format"
 	"servicebus/pkg/management"
 	"servicebus/pkg/messaging"
+
+	"github.com/spf13/cobra"
 )
 
 func buildDLQCmd() *cobra.Command {
@@ -129,6 +130,11 @@ func buildDLQViewCmd() *cobra.Command {
 
 func buildDLQPurgeCmd() *cobra.Command {
 	var yes bool
+	var batchSize, workers int
+	var retryMaxRetries, retryDelayMS, retryMaxDelayMS int
+	var progressEvery int
+	var checkpointFile string
+	var resume bool
 	cmd := &cobra.Command{
 		Use:   "p",
 		Short: "Purge (delete) dead letter messages",
@@ -167,9 +173,20 @@ func buildDLQPurgeCmd() *cobra.Command {
 				max = cfg.Settings.MaxItems
 			}
 			if gf.all {
-				max = 1000
+				max = 0
 			}
-			count, err := recv.Purge(context.Background(), filters, max)
+			opts := messaging.DLOptions{
+				Max:              max,
+				BatchSize:        batchSize,
+				Workers:          workers,
+				RetryMaxRetries:  retryMaxRetries,
+				RetryDelayMS:     retryDelayMS,
+				RetryMaxDelayMS:  retryMaxDelayMS,
+				ProgressEvery:    progressEvery,
+				CheckpointFile:   checkpointFile,
+				ResumeCheckpoint: resume,
+			}
+			count, err := recv.Purge(context.Background(), filters, opts)
 			if err != nil {
 				return err
 			}
@@ -179,11 +196,24 @@ func buildDLQPurgeCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVarP(&gf.name, "name", "n", "", "Queue name (required)")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Skip confirmation prompt")
+	cmd.Flags().IntVar(&batchSize, "batch-size", 200, "Receive batch size")
+	cmd.Flags().IntVar(&workers, "workers", 8, "Async worker count")
+	cmd.Flags().IntVar(&retryMaxRetries, "retry-max-retries", 5, "Maximum retries for transient failures")
+	cmd.Flags().IntVar(&retryDelayMS, "retry-delay-ms", 200, "Initial retry delay in milliseconds")
+	cmd.Flags().IntVar(&retryMaxDelayMS, "retry-max-delay-ms", 5000, "Maximum retry delay in milliseconds")
+	cmd.Flags().IntVar(&progressEvery, "progress-every", 0, "Print progress every N successful operations (0 disables)")
+	cmd.Flags().StringVar(&checkpointFile, "checkpoint-file", "", "Checkpoint file path for long-running operations")
+	cmd.Flags().BoolVar(&resume, "resume", false, "Resume from checkpoint file")
 	return cmd
 }
 
 func buildDLQReplayCmd() *cobra.Command {
 	var delayMins, ttlDays int
+	var batchSize, workers int
+	var retryMaxRetries, retryDelayMS, retryMaxDelayMS int
+	var progressEvery int
+	var checkpointFile string
+	var resume bool
 	cmd := &cobra.Command{
 		Use:   "r",
 		Short: "Replay (requeue) dead letter messages to main queue",
@@ -212,12 +242,20 @@ func buildDLQReplayCmd() *cobra.Command {
 				max = cfg.Settings.MaxItems
 			}
 			if gf.all {
-				max = 1000
+				max = 0
 			}
 			opts := messaging.DLOptions{
-				Max:       max,
-				DelayMins: delayMins,
-				TTLDays:   ttlDays,
+				Max:              max,
+				DelayMins:        delayMins,
+				TTLDays:          ttlDays,
+				BatchSize:        batchSize,
+				Workers:          workers,
+				RetryMaxRetries:  retryMaxRetries,
+				RetryDelayMS:     retryDelayMS,
+				RetryMaxDelayMS:  retryMaxDelayMS,
+				ProgressEvery:    progressEvery,
+				CheckpointFile:   checkpointFile,
+				ResumeCheckpoint: resume,
 			}
 			count, err := recv.Replay(context.Background(), filters, opts)
 			if err != nil {
@@ -227,8 +265,17 @@ func buildDLQReplayCmd() *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().StringVarP(&gf.name, "name", "n", "", "Queue name (required)")
 	cmd.Flags().IntVar(&delayMins, "delay", 0, "Scheduled delivery delay in minutes")
 	cmd.Flags().IntVar(&ttlDays, "ttl", 0, "Time to live in days")
+	cmd.Flags().IntVar(&batchSize, "batch-size", 200, "Receive batch size")
+	cmd.Flags().IntVar(&workers, "workers", 8, "Async worker count")
+	cmd.Flags().IntVar(&retryMaxRetries, "retry-max-retries", 5, "Maximum retries for transient failures")
+	cmd.Flags().IntVar(&retryDelayMS, "retry-delay-ms", 200, "Initial retry delay in milliseconds")
+	cmd.Flags().IntVar(&retryMaxDelayMS, "retry-max-delay-ms", 5000, "Maximum retry delay in milliseconds")
+	cmd.Flags().IntVar(&progressEvery, "progress-every", 0, "Print progress every N successful operations (0 disables)")
+	cmd.Flags().StringVar(&checkpointFile, "checkpoint-file", "", "Checkpoint file path for long-running operations")
+	cmd.Flags().BoolVar(&resume, "resume", false, "Resume from checkpoint file")
 	return cmd
 }
 
