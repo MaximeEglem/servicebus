@@ -20,7 +20,15 @@ type SendOptions struct {
 }
 
 type DLOptions struct {
-	Max       int // 0 = all
-	DelayMins int // for replay
-	TTLDays   int // for replay
+	Max              int    // 0 = all
+	DelayMins        int    // for replay
+	TTLDays          int    // for replay
+	BatchSize        int    // receive batch size
+	Workers          int    // async workers for settle/replay
+	RetryMaxRetries  int    // max retries for transient failures
+	RetryDelayMS     int    // initial retry delay in milliseconds
+	RetryMaxDelayMS  int    // max retry delay in milliseconds
+	ProgressEvery    int    // print progress every N successful operations
+	CheckpointFile   string // checkpoint path for restart support
+	ResumeCheckpoint bool   // resume from checkpoint file if present
 }
