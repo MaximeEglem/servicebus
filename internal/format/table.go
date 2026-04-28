@@ -3,6 +3,7 @@ package format
 import (
 	"fmt"
 	"reflect"
+	"time"
 
 	"github.com/fatih/color"
 	"github.com/olekukonko/tablewriter"
@@ -75,7 +76,7 @@ func (p *Printer) printTable(data any) error {
 
 		row := make([]any, len(fields))
 		for j, fm := range fields {
-			cell := fmt.Sprintf("%v", elem.Field(fm.index).Interface())
+			cell := formatTableCell(elem.Field(fm.index).Interface())
 			if sprint != nil {
 				cell = sprint(cell)
 			}
@@ -86,4 +87,21 @@ func (p *Printer) printTable(data any) error {
 		}
 	}
 	return tbl.Render()
+}
+
+func formatTableCell(value any) string {
+	switch v := value.(type) {
+	case time.Time:
+		if v.IsZero() {
+			return ""
+		}
+		return v.Format("2006-01-02 15:04:05")
+	case *time.Time:
+		if v == nil || v.IsZero() {
+			return ""
+		}
+		return v.Format("2006-01-02 15:04:05")
+	default:
+		return fmt.Sprintf("%v", value)
+	}
 }

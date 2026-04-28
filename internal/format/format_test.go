@@ -3,6 +3,7 @@ package format_test
 import (
 	"bytes"
 	"testing"
+	"time"
 
 	"servicebus/internal/format"
 )
@@ -49,6 +50,29 @@ func TestTableOutput(t *testing.T) {
 	out := buf.String()
 	if !bytes.Contains(buf.Bytes(), []byte("myqueue")) {
 		t.Errorf("Table output missing myqueue: %s", out)
+	}
+}
+
+func TestTableOutputFormatsTimeShort(t *testing.T) {
+	type rowWithTime struct {
+		Name      string
+		CreatedAt time.Time
+	}
+
+	var buf bytes.Buffer
+	p := format.NewPrinter(format.Table, &buf, format.ThresholdConfig{})
+	ts := time.Date(2025, 5, 19, 21, 21, 22, 424501200, time.UTC)
+	data := []rowWithTime{{Name: "q1", CreatedAt: ts}}
+
+	if err := p.Print(data); err != nil {
+		t.Fatalf("Print: %v", err)
+	}
+	out := buf.String()
+	if !bytes.Contains(buf.Bytes(), []byte("2025-05-19 21:21:22")) {
+		t.Fatalf("expected short timestamp in table output: %s", out)
+	}
+	if bytes.Contains(buf.Bytes(), []byte("UTC")) {
+		t.Fatalf("expected table output without verbose time zone suffix: %s", out)
 	}
 }
 
