@@ -14,7 +14,7 @@ func TestConfigRoundTrip(t *testing.T) {
 		Contexts: map[string]config.Context{
 			"dev": {ConnectionString: "Endpoint=sb://dev..."},
 		},
-		Settings: config.Settings{MaxItems: 50},
+		Settings: config.Settings{MaxItems: 100},
 	}
 	if err := config.Save(cfg); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -38,8 +38,8 @@ func TestLoadMissingReturnsDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load on missing file: %v", err)
 	}
-	if cfg.Settings.MaxItems != 50 {
-		t.Errorf("default MaxItems = %d, want 50", cfg.Settings.MaxItems)
+	if cfg.Settings.MaxItems != 100 {
+		t.Errorf("default MaxItems = %d, want 100", cfg.Settings.MaxItems)
 	}
 	if cfg.Settings.Thresholds.SizePercentage != 70 {
 		t.Errorf("default SizePercentage = %d, want 70", cfg.Settings.Thresholds.SizePercentage)

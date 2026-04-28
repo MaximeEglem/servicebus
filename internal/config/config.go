@@ -34,7 +34,7 @@ func defaults() *Config {
 	return &Config{
 		Contexts: map[string]Context{},
 		Settings: Settings{
-			MaxItems:            50,
+			MaxItems:            100,
 			WorkingDirectory:    "~/.sb/exports",
 			CacheExpirationDays: 30,
 			Thresholds:          Thresholds{SizePercentage: 70, LastAccessDays: 30},
