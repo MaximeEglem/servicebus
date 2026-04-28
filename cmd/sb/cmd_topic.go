@@ -8,8 +8,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/spf13/cobra"
 	"servicebus/pkg/management"
+
+	"github.com/spf13/cobra"
 )
 
 func buildTopicCmd() *cobra.Command {
@@ -32,6 +33,7 @@ func runTopicList(_ *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+	progress := newListProgress("topics", 4)
 	filters, err := parseFilters(gf.filters)
 	if err != nil {
 		return err
@@ -48,12 +50,13 @@ func runTopicList(_ *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+	progress.step(fmt.Sprintf("loaded %d", len(topics)))
 	topics = management.ApplyTopicFilters(topics, filters)
-	if gf.sort != "" {
-		field, dir := parseSortFlag(gf.sort)
-		management.SortTopics(topics, field, dir)
-	}
+	progress.step(fmt.Sprintf("filtered %d", len(topics)))
+	sortTopicsByFlags(topics)
+	progress.step("sorted")
 	topics = applyMaxTopics(topics, cfg)
+	progress.step(fmt.Sprintf("ready %d", len(topics)))
 	return printResult(nil, topics, cfg)
 }
 
@@ -67,6 +70,7 @@ func buildTopicExportCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			progress := newListProgress("topics", 4)
 			filters, err := parseFilters(gf.filters)
 			if err != nil {
 				return err
@@ -75,12 +79,13 @@ func buildTopicExportCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			progress.step(fmt.Sprintf("loaded %d", len(topics)))
 			topics = management.ApplyTopicFilters(topics, filters)
-			if gf.sort != "" {
-				field, dir := parseSortFlag(gf.sort)
-				management.SortTopics(topics, field, dir)
-			}
+			progress.step(fmt.Sprintf("filtered %d", len(topics)))
+			sortTopicsByFlags(topics)
+			progress.step("sorted")
 			topics = applyMaxTopics(topics, cfg)
+			progress.step(fmt.Sprintf("ready %d", len(topics)))
 			if outPath == "" {
 				outPath = filepath.Join(expandDir(cfg.Settings.WorkingDirectory),
 					fmt.Sprintf("topics-%s.json", time.Now().Format("20060102-150405")))

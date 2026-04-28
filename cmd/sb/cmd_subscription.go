@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/spf13/cobra"
 	"servicebus/pkg/management"
 	"servicebus/pkg/messaging"
+
+	"github.com/spf13/cobra"
 )
 
 func buildSubCmd() *cobra.Command {
@@ -31,6 +32,7 @@ func runSubList(_ *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+	progress := newListProgress("subs", 4)
 	filters, err := parseFilters(gf.filters)
 	if err != nil {
 		return err
@@ -47,12 +49,13 @@ func runSubList(_ *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+	progress.step(fmt.Sprintf("loaded %d", len(subs)))
 	subs = management.ApplySubscriptionFilters(subs, filters)
-	if gf.sort != "" {
-		field, dir := parseSortFlag(gf.sort)
-		management.SortSubscriptions(subs, field, dir)
-	}
+	progress.step(fmt.Sprintf("filtered %d", len(subs)))
+	sortSubscriptionsByFlags(subs)
+	progress.step("sorted")
 	subs = applyMaxSubs(subs, cfg)
+	progress.step(fmt.Sprintf("ready %d", len(subs)))
 	return printResult(nil, subs, cfg)
 }
 

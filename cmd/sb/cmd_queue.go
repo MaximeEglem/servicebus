@@ -6,14 +6,16 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
-	"github.com/spf13/cobra"
 	"servicebus/internal/config"
 	"servicebus/internal/format"
 	"servicebus/pkg/auth"
 	"servicebus/pkg/management"
 	"servicebus/pkg/messaging"
+
+	"github.com/spf13/cobra"
 )
 
 func buildQueueCmd() *cobra.Command {
@@ -36,6 +38,7 @@ func runQueueList(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+	progress := newListProgress("queues", 4)
 	filters, err := parseFilters(gf.filters)
 	if err != nil {
 		return err
@@ -52,12 +55,13 @@ func runQueueList(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+	progress.step(fmt.Sprintf("loaded %d", len(queues)))
 	queues = management.ApplyQueueFilters(queues, filters)
-	if gf.sort != "" {
-		field, dir := parseSortFlag(gf.sort)
-		management.SortQueues(queues, field, dir)
-	}
+	progress.step(fmt.Sprintf("filtered %d", len(queues)))
+	sortQueuesByFlags(queues)
+	progress.step("sorted")
 	queues = applyMax(queues, cfg)
+	progress.step(fmt.Sprintf("ready %d", len(queues)))
 	return printResult(cmd, queues, cfg)
 }
 
@@ -71,6 +75,7 @@ func buildQueueExportCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			progress := newListProgress("queues", 4)
 			filters, err := parseFilters(gf.filters)
 			if err != nil {
 				return err
@@ -79,12 +84,13 @@ func buildQueueExportCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			progress.step(fmt.Sprintf("loaded %d", len(queues)))
 			queues = management.ApplyQueueFilters(queues, filters)
-			if gf.sort != "" {
-				field, dir := parseSortFlag(gf.sort)
-				management.SortQueues(queues, field, dir)
-			}
+			progress.step(fmt.Sprintf("filtered %d", len(queues)))
+			sortQueuesByFlags(queues)
+			progress.step("sorted")
 			queues = applyMax(queues, cfg)
+			progress.step(fmt.Sprintf("ready %d", len(queues)))
 			if outPath == "" {
 				outPath = filepath.Join(expandDir(cfg.Settings.WorkingDirectory),
 					fmt.Sprintf("queues-%s.json", time.Now().Format("20060102-150405")))
@@ -263,6 +269,67 @@ func parseSortFlag(s string) (field, dir string) {
 		}
 	}
 	return s, "asc"
+}
+
+func sortQueuesByFlags(queues []management.QueueInfo) {
+	if gf.sort != "" {
+		field, dir := parseSortFlag(gf.sort)
+		management.SortQueues(queues, field, dir)
+		return
+	}
+	management.SortQueues(queues, "Name", "asc")
+}
+
+func sortTopicsByFlags(topics []management.TopicInfo) {
+	if gf.sort != "" {
+		field, dir := parseSortFlag(gf.sort)
+		management.SortTopics(topics, field, dir)
+		return
+	}
+	management.SortTopics(topics, "Name", "asc")
+}
+
+func sortSubscriptionsByFlags(subs []management.SubscriptionInfo) {
+	if gf.sort != "" {
+		field, dir := parseSortFlag(gf.sort)
+		management.SortSubscriptions(subs, field, dir)
+		return
+	}
+	management.SortSubscriptions(subs, "Name", "asc")
+}
+
+type listProgress struct {
+	label   string
+	total   int
+	current int
+	enabled bool
+}
+
+func newListProgress(label string, total int) *listProgress {
+	if total <= 0 {
+		total = 1
+	}
+	enabled := false
+	if stat, err := os.Stderr.Stat(); err == nil {
+		enabled = (stat.Mode() & os.ModeCharDevice) != 0
+	}
+	return &listProgress{label: label, total: total, enabled: enabled}
+}
+
+func (p *listProgress) step(state string) {
+	if !p.enabled {
+		return
+	}
+	if p.current < p.total {
+		p.current++
+	}
+	width := 20
+	filled := (p.current * width) / p.total
+	bar := strings.Repeat("#", filled) + strings.Repeat("-", width-filled)
+	fmt.Fprintf(os.Stderr, "\r%s [%s] %d/%d %s", p.label, bar, p.current, p.total, state)
+	if p.current >= p.total {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 func applyMax(queues []management.QueueInfo, cfg *config.Config) []management.QueueInfo {
