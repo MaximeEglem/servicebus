@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
 	"servicebus/internal/config"
+	"servicebus/internal/format"
 	"servicebus/pkg/management"
 
 	"github.com/fatih/color"
@@ -20,16 +22,18 @@ func buildOverviewCmd() *cobra.Command {
 	var deep bool
 	var useCache bool
 	var cacheTTL time.Duration
+	var top int
 	cmd := &cobra.Command{
 		Use:   "overview",
 		Short: "Show namespace metrics: queue, topic and subscription counts",
 		RunE: func(c *cobra.Command, args []string) error {
-			return runOverview(c, args, deep, useCache, cacheTTL)
+			return runOverview(c, args, deep, useCache, cacheTTL, top)
 		},
 	}
 	cmd.Flags().BoolVar(&deep, "deep", false, "Fetch subscription DLQ details (slower)")
 	cmd.Flags().BoolVar(&useCache, "cache", false, "Use cached overview if fresh; persist result to disk")
 	cmd.Flags().DurationVar(&cacheTTL, "cache-ttl", 5*time.Minute, "Cache freshness window for --cache")
+	cmd.Flags().IntVar(&top, "top", 0, "Also show top-N tables of queues, topics and subscriptions (0 = off, no extra HTTP calls)")
 	return cmd
 }
 
@@ -45,7 +49,7 @@ type namespaceMetrics struct {
 	DeepMode            bool
 }
 
-func runOverview(_ *cobra.Command, _ []string, deep, useCache bool, cacheTTL time.Duration) error {
+func runOverview(_ *cobra.Command, _ []string, deep, useCache bool, cacheTTL time.Duration, top int) error {
 	ctxName := gf.context
 	if ctxName == "" {
 		if cfg, err := config.Load(); err == nil {
@@ -53,7 +57,7 @@ func runOverview(_ *cobra.Command, _ []string, deep, useCache bool, cacheTTL tim
 		}
 	}
 	cacheFile := overviewCachePath(ctxName, deep)
-	if useCache {
+	if useCache && top == 0 {
 		if m, ok := loadOverviewCache(cacheFile, cacheTTL); ok {
 			printOverview(m)
 			if !gf.quiet {
@@ -126,6 +130,10 @@ func runOverview(_ *cobra.Command, _ []string, deep, useCache bool, cacheTTL tim
 		}
 		m.Subscriptions = int(total)
 		spin.stop()
+		printOverview(m)
+		if top > 0 {
+			printTopTables(qr.queues, tr.topics, nil, top)
+		}
 	} else {
 		// Deep path: fetch all subscriptions with a semaphore to avoid throttling Azure.
 		const concurrency = 20
@@ -161,11 +169,13 @@ func runOverview(_ *cobra.Command, _ []string, deep, useCache bool, cacheTTL tim
 			close(subCh)
 		}()
 
+		var allSubs []management.SubscriptionInfo
 		for sr := range subCh {
 			if sr.err != nil {
 				continue
 			}
 			m.Subscriptions += len(sr.subs)
+			allSubs = append(allSubs, sr.subs...)
 			for _, s := range sr.subs {
 				if s.DeadLetterMessages > 0 {
 					m.SubsWithDLQ++
@@ -174,15 +184,105 @@ func runOverview(_ *cobra.Command, _ []string, deep, useCache bool, cacheTTL tim
 			}
 		}
 		spin.stop()
+		printOverview(m)
+		if top > 0 {
+			printTopTables(qr.queues, tr.topics, allSubs, top)
+		}
 	}
 
-	printOverview(m)
-	if useCache {
+	if useCache && top == 0 {
 		if err := saveOverviewCache(cacheFile, m); err != nil && !gf.quiet {
 			fmt.Fprintf(os.Stderr, "warning: cache write failed: %v\n", err)
 		}
 	}
 	return nil
+}
+
+func printTopTables(queues []management.QueueInfo, topics []management.TopicInfo, subs []management.SubscriptionInfo, n int) {
+	p := format.NewPrinter(format.Table, os.Stdout, format.ThresholdConfig{})
+
+	// Top queues by DLQ count (only those with DLQ > 0), then by ActiveMessages.
+	dlq := make([]management.QueueInfo, 0, len(queues))
+	for _, q := range queues {
+		if q.DeadLetterMessages > 0 {
+			dlq = append(dlq, q)
+		}
+	}
+	sort.Slice(dlq, func(i, j int) bool { return dlq[i].DeadLetterMessages > dlq[j].DeadLetterMessages })
+	if len(dlq) > 0 {
+		fmt.Println()
+		fmt.Println(headerLine(fmt.Sprintf("Top %d queues by dead letters", min(n, len(dlq)))))
+		_ = p.Print(headTopQueues(dlq, n))
+	}
+
+	active := append([]management.QueueInfo(nil), queues...)
+	sort.Slice(active, func(i, j int) bool { return active[i].ActiveMessages > active[j].ActiveMessages })
+	if len(active) > 0 && active[0].ActiveMessages > 0 {
+		fmt.Println()
+		fmt.Println(headerLine(fmt.Sprintf("Top %d queues by active messages", min(n, len(active)))))
+		_ = p.Print(headTopQueues(active, n))
+	}
+
+	// Top topics by SubscriptionCount, then by Size.
+	bySubs := append([]management.TopicInfo(nil), topics...)
+	sort.Slice(bySubs, func(i, j int) bool { return bySubs[i].SubscriptionCount > bySubs[j].SubscriptionCount })
+	if len(bySubs) > 0 && bySubs[0].SubscriptionCount > 0 {
+		fmt.Println()
+		fmt.Println(headerLine(fmt.Sprintf("Top %d topics by subscription count", min(n, len(bySubs)))))
+		_ = p.Print(headTopTopics(bySubs, n))
+	}
+
+	bySize := append([]management.TopicInfo(nil), topics...)
+	sort.Slice(bySize, func(i, j int) bool { return bySize[i].SizeInMegabytes > bySize[j].SizeInMegabytes })
+	if len(bySize) > 0 && bySize[0].SizeInMegabytes > 0 {
+		fmt.Println()
+		fmt.Println(headerLine(fmt.Sprintf("Top %d topics by size", min(n, len(bySize)))))
+		_ = p.Print(headTopTopics(bySize, n))
+	}
+
+	// Top subscriptions by DLQ (only available with --deep).
+	if len(subs) > 0 {
+		dlqSubs := make([]management.SubscriptionInfo, 0, len(subs))
+		for _, s := range subs {
+			if s.DeadLetterMessages > 0 {
+				dlqSubs = append(dlqSubs, s)
+			}
+		}
+		sort.Slice(dlqSubs, func(i, j int) bool { return dlqSubs[i].DeadLetterMessages > dlqSubs[j].DeadLetterMessages })
+		if len(dlqSubs) > 0 {
+			fmt.Println()
+			fmt.Println(headerLine(fmt.Sprintf("Top %d subscriptions by dead letters", min(n, len(dlqSubs)))))
+			_ = p.Print(headTopSubs(dlqSubs, n))
+		}
+	}
+}
+
+func headTopQueues(qs []management.QueueInfo, n int) []management.QueueInfo {
+	if n > 0 && len(qs) > n {
+		return qs[:n]
+	}
+	return qs
+}
+
+func headTopTopics(ts []management.TopicInfo, n int) []management.TopicInfo {
+	if n > 0 && len(ts) > n {
+		return ts[:n]
+	}
+	return ts
+}
+
+func headTopSubs(ss []management.SubscriptionInfo, n int) []management.SubscriptionInfo {
+	if n > 0 && len(ss) > n {
+		return ss[:n]
+	}
+	return ss
+}
+
+func headerLine(s string) string {
+	if stat, err := os.Stdout.Stat(); err == nil && (stat.Mode()&os.ModeCharDevice) != 0 {
+		return color.New(color.FgHiCyan, color.Bold).Sprint("  " + s)
+	}
+	return "  " + s
 }
 
 func overviewCachePath(ctxName string, deep bool) string {

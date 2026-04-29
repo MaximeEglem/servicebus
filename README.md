@@ -529,6 +529,14 @@ sb mcp
 
 ## Changelog
 
+### v0.8.0 — Overview top tables
+
+- New `sb overview --top N` flag — adds named tables of the busiest entities directly inside the overview output, with **zero extra HTTP calls** in shallow mode.
+  - Top N queues by dead letters and by active messages.
+  - Top N topics by subscription count and by size.
+  - Top N subscriptions by dead letters (requires `--deep`, since Azure exposes subscription counts but not names on the topic runtime payload).
+- Cache (`--cache`) is automatically bypassed when `--top` is requested so the raw entity lists are always fresh.
+
 ### v0.7.0 — Live monitoring
 
 - New `sb tail` command — follows new messages on a queue, subscription, or DLQ via the read-only `PeekMessages` API. Supports `--since`, `--from-seq`, `--dlq`, `--interval`, `--batch`, `--body-only`. Safe to run against production: never locks or consumes messages.
