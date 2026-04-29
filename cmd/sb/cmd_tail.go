@@ -99,6 +99,8 @@ position the cursor closer to the tip on busy entities.`,
 			}
 		},
 	}
+	cmd.Flags().StringVarP(&gf.name, "name", "n", "", "Queue name, or subscription name when -t is set")
+	cmd.Flags().StringVarP(&gf.topic, "topic", "t", "", "Topic name (when tailing a subscription)")
 	cmd.Flags().DurationVarP(&interval, "interval", "i", 2*time.Second, "Polling interval")
 	cmd.Flags().Int64Var(&fromSeq, "from-seq", 0, "Start from this sequence number (0 = beginning)")
 	cmd.Flags().DurationVar(&since, "since", 0, "Only show messages enqueued in the last duration (e.g. 5m, 1h)")
