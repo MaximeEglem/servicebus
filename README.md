@@ -529,6 +529,16 @@ sb mcp
 
 ## Changelog
 
+### v0.9.0 — Favorites
+
+- New `sb fav` command tree to star queues, topics, and subscriptions per context:
+  - `sb fav add q <queue>` / `sb fav add t <topic>` / `sb fav add sub <name> -t <topic>`
+  - `sb fav rm <kind> <name>`, `sb fav list`, `sb fav clear`
+- Favorites **bubble to the top** of every list/sort output (`sb q`, `sb t`, `sb sub`, plus DLQ/DLS) and are prefixed with `★` in table output (JSON/YAML keep their original names).
+- `sb overview` now prints a **★ Favorites** section showing every favorited queue, topic, and (with `--deep`) subscription using already-fetched data — zero extra HTTP calls.
+- Top-N tables (`overview --top N`) also bubble and mark favorites.
+- Favorites are stored per context in `~/.sb/config.yaml` under `contexts.<name>.favorites`.
+
 ### v0.8.0 — Overview top tables
 
 - New `sb overview --top N` flag — adds named tables of the busiest entities directly inside the overview output, with **zero extra HTTP calls** in shallow mode.

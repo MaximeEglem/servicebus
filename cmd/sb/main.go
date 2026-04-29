@@ -71,6 +71,7 @@ func buildRoot() *cobra.Command {
 		buildMCPCmd(),
 		buildTailCmd(),
 		buildWatchCmd(),
+		buildFavCmd(),
 	)
 
 	return root

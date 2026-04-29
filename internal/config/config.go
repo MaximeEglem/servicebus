@@ -13,9 +13,33 @@ type Config struct {
 }
 
 type Context struct {
-	ConnectionString      string `yaml:"connection-string,omitempty"`
-	Namespace             string `yaml:"namespace,omitempty"`
-	UseDefaultCredentials bool   `yaml:"use-default-credentials,omitempty"`
+	ConnectionString      string    `yaml:"connection-string,omitempty"`
+	Namespace             string    `yaml:"namespace,omitempty"`
+	UseDefaultCredentials bool      `yaml:"use-default-credentials,omitempty"`
+	Favorites             Favorites `yaml:"favorites,omitempty"`
+}
+
+// Favorites are bubbled to the top of every list/sort output and surfaced
+// in `sb overview`. Subscriptions are stored as "topic/subscription".
+type Favorites struct {
+	Queues        []string `yaml:"queues,omitempty"`
+	Topics        []string `yaml:"topics,omitempty"`
+	Subscriptions []string `yaml:"subscriptions,omitempty"`
+}
+
+func (f Favorites) HasQueue(name string) bool        { return contains(f.Queues, name) }
+func (f Favorites) HasTopic(name string) bool        { return contains(f.Topics, name) }
+func (f Favorites) HasSubscription(topic, name string) bool {
+	return contains(f.Subscriptions, topic+"/"+name)
+}
+
+func contains(s []string, v string) bool {
+	for _, x := range s {
+		if x == v {
+			return true
+		}
+	}
+	return false
 }
 
 type Settings struct {

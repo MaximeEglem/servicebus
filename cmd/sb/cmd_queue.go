@@ -290,27 +290,30 @@ func sortQueuesByFlags(queues []management.QueueInfo) {
 	if gf.sort != "" {
 		field, dir := parseSortFlag(gf.sort)
 		management.SortQueues(queues, field, dir)
-		return
+	} else {
+		management.SortQueues(queues, "Name", "asc")
 	}
-	management.SortQueues(queues, "Name", "asc")
+	bubbleQueueFavorites(queues, activeFavoritesNoErr())
 }
 
 func sortTopicsByFlags(topics []management.TopicInfo) {
 	if gf.sort != "" {
 		field, dir := parseSortFlag(gf.sort)
 		management.SortTopics(topics, field, dir)
-		return
+	} else {
+		management.SortTopics(topics, "Name", "asc")
 	}
-	management.SortTopics(topics, "Name", "asc")
+	bubbleTopicFavorites(topics, activeFavoritesNoErr())
 }
 
 func sortSubscriptionsByFlags(subs []management.SubscriptionInfo) {
 	if gf.sort != "" {
 		field, dir := parseSortFlag(gf.sort)
 		management.SortSubscriptions(subs, field, dir)
-		return
+	} else {
+		management.SortSubscriptions(subs, "Name", "asc")
 	}
-	management.SortSubscriptions(subs, "Name", "asc")
+	bubbleSubFavorites(subs, activeFavoritesNoErr())
 }
 
 type listProgress struct {
@@ -395,6 +398,17 @@ func printResult(_ *cobra.Command, data any, cfg *config.Config) error {
 	f, err := resolveFormat()
 	if err != nil {
 		return err
+	}
+	if f == format.Table {
+		fav := activeFavorites(cfg)
+		switch v := data.(type) {
+		case []management.QueueInfo:
+			markQueueFavoritesForTable(v, fav)
+		case []management.TopicInfo:
+			markTopicFavoritesForTable(v, fav)
+		case []management.SubscriptionInfo:
+			markSubFavoritesForTable(v, fav)
+		}
 	}
 	p := format.NewPrinter(f, os.Stdout, format.ThresholdConfig{
 		SizePercentage: cfg.Settings.Thresholds.SizePercentage,

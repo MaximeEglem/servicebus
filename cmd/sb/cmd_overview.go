@@ -131,8 +131,10 @@ func runOverview(_ *cobra.Command, _ []string, deep, useCache bool, cacheTTL tim
 		m.Subscriptions = int(total)
 		spin.stop()
 		printOverview(m)
+		fav := activeFavoritesNoErr()
+		printFavoritesOverview(qr.queues, tr.topics, nil, fav)
 		if top > 0 {
-			printTopTables(qr.queues, tr.topics, nil, top)
+			printTopTables(qr.queues, tr.topics, nil, top, fav)
 		}
 	} else {
 		// Deep path: fetch all subscriptions with a semaphore to avoid throttling Azure.
@@ -185,8 +187,10 @@ func runOverview(_ *cobra.Command, _ []string, deep, useCache bool, cacheTTL tim
 		}
 		spin.stop()
 		printOverview(m)
+		fav := activeFavoritesNoErr()
+		printFavoritesOverview(qr.queues, tr.topics, allSubs, fav)
 		if top > 0 {
-			printTopTables(qr.queues, tr.topics, allSubs, top)
+			printTopTables(qr.queues, tr.topics, allSubs, top, fav)
 		}
 	}
 
@@ -198,7 +202,7 @@ func runOverview(_ *cobra.Command, _ []string, deep, useCache bool, cacheTTL tim
 	return nil
 }
 
-func printTopTables(queues []management.QueueInfo, topics []management.TopicInfo, subs []management.SubscriptionInfo, n int) {
+func printTopTables(queues []management.QueueInfo, topics []management.TopicInfo, subs []management.SubscriptionInfo, n int, fav config.Favorites) {
 	p := format.NewPrinter(format.Table, os.Stdout, format.ThresholdConfig{})
 
 	// Top queues by DLQ count (only those with DLQ > 0), then by ActiveMessages.
@@ -212,7 +216,10 @@ func printTopTables(queues []management.QueueInfo, topics []management.TopicInfo
 	if len(dlq) > 0 {
 		fmt.Println()
 		fmt.Println(headerLine(fmt.Sprintf("Top %d queues by dead letters", min(n, len(dlq)))))
-		_ = p.Print(headTopQueues(dlq, n))
+		rows := headTopQueues(dlq, n)
+		bubbleQueueFavorites(rows, fav)
+		markQueueFavoritesForTable(rows, fav)
+		_ = p.Print(rows)
 	}
 
 	active := append([]management.QueueInfo(nil), queues...)
@@ -220,7 +227,10 @@ func printTopTables(queues []management.QueueInfo, topics []management.TopicInfo
 	if len(active) > 0 && active[0].ActiveMessages > 0 {
 		fmt.Println()
 		fmt.Println(headerLine(fmt.Sprintf("Top %d queues by active messages", min(n, len(active)))))
-		_ = p.Print(headTopQueues(active, n))
+		rows := headTopQueues(active, n)
+		bubbleQueueFavorites(rows, fav)
+		markQueueFavoritesForTable(rows, fav)
+		_ = p.Print(rows)
 	}
 
 	// Top topics by SubscriptionCount, then by Size.
@@ -229,7 +239,10 @@ func printTopTables(queues []management.QueueInfo, topics []management.TopicInfo
 	if len(bySubs) > 0 && bySubs[0].SubscriptionCount > 0 {
 		fmt.Println()
 		fmt.Println(headerLine(fmt.Sprintf("Top %d topics by subscription count", min(n, len(bySubs)))))
-		_ = p.Print(headTopTopics(bySubs, n))
+		rows := headTopTopics(bySubs, n)
+		bubbleTopicFavorites(rows, fav)
+		markTopicFavoritesForTable(rows, fav)
+		_ = p.Print(rows)
 	}
 
 	bySize := append([]management.TopicInfo(nil), topics...)
@@ -237,7 +250,10 @@ func printTopTables(queues []management.QueueInfo, topics []management.TopicInfo
 	if len(bySize) > 0 && bySize[0].SizeInMegabytes > 0 {
 		fmt.Println()
 		fmt.Println(headerLine(fmt.Sprintf("Top %d topics by size", min(n, len(bySize)))))
-		_ = p.Print(headTopTopics(bySize, n))
+		rows := headTopTopics(bySize, n)
+		bubbleTopicFavorites(rows, fav)
+		markTopicFavoritesForTable(rows, fav)
+		_ = p.Print(rows)
 	}
 
 	// Top subscriptions by DLQ (only available with --deep).
@@ -252,30 +268,87 @@ func printTopTables(queues []management.QueueInfo, topics []management.TopicInfo
 		if len(dlqSubs) > 0 {
 			fmt.Println()
 			fmt.Println(headerLine(fmt.Sprintf("Top %d subscriptions by dead letters", min(n, len(dlqSubs)))))
-			_ = p.Print(headTopSubs(dlqSubs, n))
+			rows := headTopSubs(dlqSubs, n)
+			bubbleSubFavorites(rows, fav)
+			markSubFavoritesForTable(rows, fav)
+			_ = p.Print(rows)
 		}
 	}
 }
 
 func headTopQueues(qs []management.QueueInfo, n int) []management.QueueInfo {
 	if n > 0 && len(qs) > n {
-		return qs[:n]
+		qs = qs[:n]
 	}
-	return qs
+	out := make([]management.QueueInfo, len(qs))
+	copy(out, qs)
+	return out
 }
 
 func headTopTopics(ts []management.TopicInfo, n int) []management.TopicInfo {
 	if n > 0 && len(ts) > n {
-		return ts[:n]
+		ts = ts[:n]
 	}
-	return ts
+	out := make([]management.TopicInfo, len(ts))
+	copy(out, ts)
+	return out
 }
 
 func headTopSubs(ss []management.SubscriptionInfo, n int) []management.SubscriptionInfo {
 	if n > 0 && len(ss) > n {
-		return ss[:n]
+		ss = ss[:n]
 	}
-	return ss
+	out := make([]management.SubscriptionInfo, len(ss))
+	copy(out, ss)
+	return out
+}
+
+// printFavoritesOverview renders a single ★ Favorites section with all
+// favorited queues, topics, and (when --deep) subscriptions of the active
+// context. Uses already-fetched data — zero extra HTTP calls.
+func printFavoritesOverview(queues []management.QueueInfo, topics []management.TopicInfo, subs []management.SubscriptionInfo, fav config.Favorites) {
+	if len(fav.Queues)+len(fav.Topics)+len(fav.Subscriptions) == 0 {
+		return
+	}
+	p := format.NewPrinter(format.Table, os.Stdout, format.ThresholdConfig{})
+
+	favQ := make([]management.QueueInfo, 0, len(fav.Queues))
+	for _, q := range queues {
+		if fav.HasQueue(q.Name) {
+			favQ = append(favQ, q)
+		}
+	}
+	if len(favQ) > 0 {
+		fmt.Println()
+		fmt.Println(headerLine(fmt.Sprintf("★ Favorite queues (%d)", len(favQ))))
+		_ = p.Print(favQ)
+	}
+
+	favT := make([]management.TopicInfo, 0, len(fav.Topics))
+	for _, t := range topics {
+		if fav.HasTopic(t.Name) {
+			favT = append(favT, t)
+		}
+	}
+	if len(favT) > 0 {
+		fmt.Println()
+		fmt.Println(headerLine(fmt.Sprintf("★ Favorite topics (%d)", len(favT))))
+		_ = p.Print(favT)
+	}
+
+	if len(subs) > 0 {
+		favS := make([]management.SubscriptionInfo, 0, len(fav.Subscriptions))
+		for _, s := range subs {
+			if fav.HasSubscription(s.TopicName, s.Name) {
+				favS = append(favS, s)
+			}
+		}
+		if len(favS) > 0 {
+			fmt.Println()
+			fmt.Println(headerLine(fmt.Sprintf("★ Favorite subscriptions (%d)", len(favS))))
+			_ = p.Print(favS)
+		}
+	}
 }
 
 func headerLine(s string) string {
