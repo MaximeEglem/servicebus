@@ -22,7 +22,8 @@ func buildDLQCmd() *cobra.Command {
 		Long:  "List queues with dead letters, or use -n to view/purge/replay/export a specific queue's DLQ",
 		RunE:  runDLQList,
 	}
-	cmd.Flags().IntVarP(&gf.max, "max", "m", 0, "Max results")
+	cmd.Flags().IntVarP(&gf.max, "max", "m", 0, "Max results per page")
+	cmd.Flags().IntVar(&gf.page, "page", 0, "Page index, 1-based (default 1)")
 	cmd.Flags().BoolVarP(&gf.all, "all", "a", false, "All results")
 	cmd.Flags().StringVarP(&gf.sort, "sort", "s", "", "<Field>:asc|dsc")
 	cmd.Flags().StringArrayVarP(&gf.filters, "filter", "f", nil, "Filter (repeatable)")

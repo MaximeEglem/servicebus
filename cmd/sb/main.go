@@ -16,6 +16,7 @@ type globalFlags struct {
 	namespace        string
 	output           string
 	max              int
+	page             int
 	all              bool
 	sort             string
 	filters          []string
@@ -47,8 +48,9 @@ func buildRoot() *cobra.Command {
 	root.PersistentFlags().StringVarP(&gf.output, "output", "o", "table", "Output format: table, json, yaml")
 	root.PersistentFlags().BoolVarP(&gf.quiet, "quiet", "q", false, "Suppress progress bars and informational stderr output (auto-on when stderr is not a TTY)")
 
-	root.Flags().IntVarP(&gf.max, "max", "m", 0, "Max results (0 = use MaxItems setting)")
-	root.Flags().BoolVarP(&gf.all, "all", "a", false, "Return all results")
+	root.Flags().IntVarP(&gf.max, "max", "m", 0, "Max results per page (0 = use MaxItems setting)")
+	root.Flags().IntVar(&gf.page, "page", 0, "Page index, 1-based (default 1)")
+	root.Flags().BoolVarP(&gf.all, "all", "a", false, "Return all results (ignores --max and --page)")
 	root.Flags().StringVarP(&gf.sort, "sort", "s", "", "Sort: <Field>:asc|dsc")
 	root.Flags().StringArrayVarP(&gf.filters, "filter", "f", nil, "Filter (repeatable)")
 	root.Flags().StringVarP(&gf.name, "name", "n", "", "Resource name")

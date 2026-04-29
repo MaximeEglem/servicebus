@@ -58,12 +58,12 @@ func TestGroupMessagesByBodyHash(t *testing.T) {
 
 func TestParseGroupKey(t *testing.T) {
 	cases := map[string]GroupKey{
-		"":             GroupByReason,
-		"reason":       GroupByReason,
-		"ErrorType":    GroupByReason,
-		"description":  GroupByDescription,
-		"body":         GroupByBodyHash,
-		"body-hash":    GroupByBodyHash,
+		"":            GroupByReason,
+		"reason":      GroupByReason,
+		"ErrorType":   GroupByReason,
+		"description": GroupByDescription,
+		"body":        GroupByBodyHash,
+		"body-hash":   GroupByBodyHash,
 	}
 	for in, want := range cases {
 		got, ok := ParseGroupKey(in)

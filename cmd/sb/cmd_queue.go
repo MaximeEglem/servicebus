@@ -25,7 +25,8 @@ func buildQueueCmd() *cobra.Command {
 		Short: "Manage queues",
 		RunE:  runQueueList,
 	}
-	cmd.Flags().IntVarP(&gf.max, "max", "m", 0, "Max results")
+	cmd.Flags().IntVarP(&gf.max, "max", "m", 0, "Max results per page")
+	cmd.Flags().IntVar(&gf.page, "page", 0, "Page index, 1-based (default 1)")
 	cmd.Flags().BoolVarP(&gf.all, "all", "a", false, "All results")
 	cmd.Flags().StringVarP(&gf.sort, "sort", "s", "", "<Field>:asc|dsc")
 	cmd.Flags().StringArrayVarP(&gf.filters, "filter", "f", nil, "Filter (repeatable)")
@@ -352,46 +353,68 @@ func (p *listProgress) step(state string) {
 	}
 }
 
-func applyMax(queues []management.QueueInfo, cfg *config.Config) []management.QueueInfo {
+// pageInfo records the last pagination summary so printResult can render
+// a one-line footer after the table. Reset on every list run.
+type pageInfo struct {
+	total     int
+	start     int // 1-based first item on the page (0 if empty)
+	end       int // 1-based last item on the page (0 if empty)
+	page      int // current page (1-based)
+	pageCount int
+	pageSize  int
+	all       bool
+}
+
+var lastPage pageInfo
+
+func paginate[T any](items []T, cfg *config.Config) []T {
+	total := len(items)
 	if gf.all {
-		return queues
+		lastPage = pageInfo{total: total, start: oneIfAny(total), end: total, page: 1, pageCount: 1, pageSize: total, all: true}
+		return items
 	}
 	limit := gf.max
 	if limit <= 0 {
 		limit = cfg.Settings.MaxItems
 	}
-	if limit > 0 && len(queues) > limit {
-		return queues[:limit]
+	if limit <= 0 || total == 0 {
+		lastPage = pageInfo{total: total, start: oneIfAny(total), end: total, page: 1, pageCount: 1, pageSize: total}
+		return items
 	}
-	return queues
+	page := gf.page
+	if page <= 0 {
+		page = 1
+	}
+	pageCount := (total + limit - 1) / limit
+	if page > pageCount {
+		page = pageCount
+	}
+	start := (page - 1) * limit
+	end := start + limit
+	if end > total {
+		end = total
+	}
+	lastPage = pageInfo{total: total, start: start + 1, end: end, page: page, pageCount: pageCount, pageSize: limit}
+	return items[start:end]
+}
+
+func oneIfAny(n int) int {
+	if n == 0 {
+		return 0
+	}
+	return 1
+}
+
+func applyMax(queues []management.QueueInfo, cfg *config.Config) []management.QueueInfo {
+	return paginate(queues, cfg)
 }
 
 func applyMaxTopics(topics []management.TopicInfo, cfg *config.Config) []management.TopicInfo {
-	if gf.all {
-		return topics
-	}
-	limit := gf.max
-	if limit <= 0 {
-		limit = cfg.Settings.MaxItems
-	}
-	if limit > 0 && len(topics) > limit {
-		return topics[:limit]
-	}
-	return topics
+	return paginate(topics, cfg)
 }
 
 func applyMaxSubs(subs []management.SubscriptionInfo, cfg *config.Config) []management.SubscriptionInfo {
-	if gf.all {
-		return subs
-	}
-	limit := gf.max
-	if limit <= 0 {
-		limit = cfg.Settings.MaxItems
-	}
-	if limit > 0 && len(subs) > limit {
-		return subs[:limit]
-	}
-	return subs
+	return paginate(subs, cfg)
 }
 
 func printResult(_ *cobra.Command, data any, cfg *config.Config) error {
@@ -414,7 +437,33 @@ func printResult(_ *cobra.Command, data any, cfg *config.Config) error {
 		SizePercentage: cfg.Settings.Thresholds.SizePercentage,
 		LastAccessDays: cfg.Settings.Thresholds.LastAccessDays,
 	})
-	return p.Print(data)
+	if err := p.Print(data); err != nil {
+		return err
+	}
+	if f == format.Table {
+		printPageFooter(lastPage)
+	}
+	return nil
+}
+
+func printPageFooter(p pageInfo) {
+	if p.total == 0 {
+		fmt.Println("  (no results)")
+		return
+	}
+	if p.all || p.pageCount <= 1 {
+		fmt.Printf("  %d of %d (showing all)\n", p.end-p.start+1, p.total)
+		return
+	}
+	fmt.Printf("  %d–%d of %d  ·  page %d/%d  ·  next: --page %d  ·  show all: --all\n",
+		p.start, p.end, p.total, p.page, p.pageCount, nextPage(p.page, p.pageCount))
+}
+
+func nextPage(cur, total int) int {
+	if cur >= total {
+		return total
+	}
+	return cur + 1
 }
 
 func expandDir(path string) string {

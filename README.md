@@ -529,6 +529,14 @@ sb mcp
 
 ## Changelog
 
+### v0.10.0 — Pagination
+
+- Every list (`sb q`, `sb t`, `sb sub`, `sb dlq`, `sb dls`) now prints a footer showing the **total count** and current page:
+  - `1–50 of 376  ·  page 1/8  ·  next: --page 2  ·  show all: --all`
+- New global `--page N` flag (1-based) jumps to any page, used together with `-m`/`--max` to control page size (defaults to `MaxItems` from settings).
+- `--all` keeps its existing behavior and shows `N of N (showing all)` in the footer.
+- Footer is only rendered for table output — JSON/YAML stay clean for piping.
+
 ### v0.9.0 — Favorites
 
 - New `sb fav` command tree to star queues, topics, and subscriptions per context:

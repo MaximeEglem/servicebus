@@ -27,8 +27,8 @@ type Favorites struct {
 	Subscriptions []string `yaml:"subscriptions,omitempty"`
 }
 
-func (f Favorites) HasQueue(name string) bool        { return contains(f.Queues, name) }
-func (f Favorites) HasTopic(name string) bool        { return contains(f.Topics, name) }
+func (f Favorites) HasQueue(name string) bool { return contains(f.Queues, name) }
+func (f Favorites) HasTopic(name string) bool { return contains(f.Topics, name) }
 func (f Favorites) HasSubscription(topic, name string) bool {
 	return contains(f.Subscriptions, topic+"/"+name)
 }
